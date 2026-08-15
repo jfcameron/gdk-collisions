@@ -1,0 +1,6 @@
+[submodule "cmake/jfc-cmake"]
+	path = cmake/jfc-cmake
+	url = https://github.com/jfcameron/jfc-cmake.git
+[submodule "extern/gdk-math"]
+	path = extern/gdk-math
+	url = https://github.com/jfcameron/gdk-math.git
