@@ -1,7 +1,7 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/collision_exception.h>
-#include <gdk/impl_mesh_data.h>
+#include <gdk/collisions/exception.h>
+#include <gdk/collisions/impl_mesh_data.h>
 
 #include <algorithm>
 #include <array>
@@ -10,7 +10,7 @@
 #include <numeric>
 #include <utility>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
     constexpr std::uint32_t TRIANGLES_PER_LEAF = 4;
@@ -22,21 +22,21 @@ namespace {
     }
 }
 
-mesh_data_ptr_type impl_mesh_data::make(std::vector<collision_vector3_type> aVertices,
-    std::vector<std::uint32_t> aIndices, const collision_floating_point_type aCoplanarTolerance) {
+mesh_data_ptr_type impl_mesh_data::make(std::vector<vector3_type> aVertices,
+    std::vector<std::uint32_t> aIndices, const floating_point_type aCoplanarTolerance) {
     if (aIndices.size() % 3 != 0)
-        throw collision_exception("gdk::collision: mesh index count is not a multiple of three");
+        throw exception("gdk::collision: mesh index count is not a multiple of three");
 
     for (const auto index : aIndices)
         if (index >= aVertices.size())
-            throw collision_exception("gdk::collision: mesh index is out of range of its vertices");
+            throw exception("gdk::collision: mesh index is out of range of its vertices");
 
     return mesh_data_ptr_type(new impl_mesh_data(std::move(aVertices), std::move(aIndices),
         aCoplanarTolerance));
 }
 
-impl_mesh_data::impl_mesh_data(std::vector<collision_vector3_type> aVertices,
-    std::vector<std::uint32_t> aIndices, const collision_floating_point_type aCoplanarTolerance)
+impl_mesh_data::impl_mesh_data(std::vector<vector3_type> aVertices,
+    std::vector<std::uint32_t> aIndices, const floating_point_type aCoplanarTolerance)
 : m_Vertices(std::move(aVertices))
 , m_Indices(std::move(aIndices))
 {
@@ -46,9 +46,9 @@ impl_mesh_data::impl_mesh_data(std::vector<collision_vector3_type> aVertices,
     m_Order.resize(count);
     std::iota(m_Order.begin(), m_Order.end(), 0u);
 
-    std::vector<collision_vector3_type> centroids(count);
+    std::vector<vector3_type> centroids(count);
     for (std::uint32_t i = 0; i < count; ++i) {
-        collision_vector3_type a, b, c;
+        vector3_type a, b, c;
         triangle(i, a, b, c);
         centroids[i] = (a + b + c) / 3.0f;
     }
@@ -59,15 +59,15 @@ impl_mesh_data::impl_mesh_data(std::vector<collision_vector3_type> aVertices,
     flag_internal_edges(aCoplanarTolerance);
 }
 
-void impl_mesh_data::flag_internal_edges(const collision_floating_point_type aCoplanarTolerance) {
+void impl_mesh_data::flag_internal_edges(const floating_point_type aCoplanarTolerance) {
     const auto count = static_cast<std::uint32_t>(triangle_count());
     m_InternalEdges.assign(count, 0);
 
-    std::map<std::array<collision_floating_point_type, 3>, std::uint32_t> welded;
+    std::map<std::array<floating_point_type, 3>, std::uint32_t> welded;
     std::vector<std::uint32_t> canonical(m_Vertices.size());
 
     for (std::size_t i = 0; i < m_Vertices.size(); ++i) {
-        const std::array<collision_floating_point_type, 3> key{
+        const std::array<floating_point_type, 3> key{
             m_Vertices[i].x, m_Vertices[i].y, m_Vertices[i].z};
 
         canonical[i] = welded.emplace(key, static_cast<std::uint32_t>(welded.size())).first->second;
@@ -86,7 +86,7 @@ void impl_mesh_data::flag_internal_edges(const collision_floating_point_type aCo
         for (int e = 0; e < 3; ++e) edges[edge_key(t, e)].push_back(t);
 
     const auto normal_of = [this](const std::uint32_t aTriangle) {
-        collision_vector3_type a, b, c;
+        vector3_type a, b, c;
         triangle(aTriangle, a, b, c);
         return (b - a).cross_product(c - a).normal();
     };
@@ -115,8 +115,8 @@ std::size_t impl_mesh_data::triangle_count() const {
     return m_Indices.size() / 3;
 }
 
-void impl_mesh_data::triangle(const std::uint32_t aTriangle, collision_vector3_type &aA,
-    collision_vector3_type &aB, collision_vector3_type &aC) const {
+void impl_mesh_data::triangle(const std::uint32_t aTriangle, vector3_type &aA,
+    vector3_type &aB, vector3_type &aC) const {
     const auto base = static_cast<std::size_t>(aTriangle) * 3;
     aA = m_Vertices[m_Indices[base + 0]];
     aB = m_Vertices[m_Indices[base + 1]];
@@ -130,35 +130,35 @@ mesh_triangle impl_mesh_data::triangle(const std::size_t aTriangle) const {
 }
 
 impl_mesh_data::bounds impl_mesh_data::bounds_of(const std::uint32_t aTriangle) const {
-    collision_vector3_type a, b, c;
+    vector3_type a, b, c;
     triangle(aTriangle, a, b, c);
     return bounds{
-        collision_vector3_type::min(a, collision_vector3_type::min(b, c)),
-        collision_vector3_type::max(a, collision_vector3_type::max(b, c))};
+        vector3_type::min(a, vector3_type::min(b, c)),
+        vector3_type::max(a, vector3_type::max(b, c))};
 }
 
 const impl_mesh_data::bounds &impl_mesh_data::root_bounds() const {
     static const bounds empty{
-        collision_vector3_type{std::numeric_limits<collision_floating_point_type>::infinity(),
-            std::numeric_limits<collision_floating_point_type>::infinity(),
-            std::numeric_limits<collision_floating_point_type>::infinity()},
-        collision_vector3_type{-std::numeric_limits<collision_floating_point_type>::infinity(),
-            -std::numeric_limits<collision_floating_point_type>::infinity(),
-            -std::numeric_limits<collision_floating_point_type>::infinity()}};
+        vector3_type{std::numeric_limits<floating_point_type>::infinity(),
+            std::numeric_limits<floating_point_type>::infinity(),
+            std::numeric_limits<floating_point_type>::infinity()},
+        vector3_type{-std::numeric_limits<floating_point_type>::infinity(),
+            -std::numeric_limits<floating_point_type>::infinity(),
+            -std::numeric_limits<floating_point_type>::infinity()}};
 
     return m_Nodes.empty() ? empty : m_Nodes.front().box;
 }
 
 std::uint32_t impl_mesh_data::build(const std::uint32_t aFirst, const std::uint32_t aCount,
-    const std::vector<collision_vector3_type> &aCentroids) {
+    const std::vector<vector3_type> &aCentroids) {
     const auto self = static_cast<std::uint32_t>(m_Nodes.size());
     m_Nodes.push_back(node{});
 
     auto box = bounds_of(m_Order[aFirst]);
     for (std::uint32_t i = 1; i < aCount; ++i) {
         const auto b = bounds_of(m_Order[aFirst + i]);
-        box.min = collision_vector3_type::min(box.min, b.min);
-        box.max = collision_vector3_type::max(box.max, b.max);
+        box.min = vector3_type::min(box.min, b.min);
+        box.max = vector3_type::max(box.max, b.max);
     }
     m_Nodes[self].box = box;
 
@@ -175,7 +175,7 @@ std::uint32_t impl_mesh_data::build(const std::uint32_t aFirst, const std::uint3
         ? (extent.x > extent.z ? 0 : 2)
         : (extent.y > extent.z ? 1 : 2);
 
-    const auto component = [axis](const collision_vector3_type &aVector) {
+    const auto component = [axis](const vector3_type &aVector) {
         return axis == 0 ? aVector.x : (axis == 1 ? aVector.y : aVector.z);
     };
 
@@ -213,14 +213,14 @@ void impl_mesh_data::query(const bounds &aQuery, std::vector<std::uint32_t> &aOu
             for (std::uint32_t i = 0; i < current.count; ++i) {
                 const auto triangle = m_Order[current.first + i];
 
-                collision_vector3_type a;
-                collision_vector3_type b;
-                collision_vector3_type c;
+                vector3_type a;
+                vector3_type b;
+                vector3_type c;
                 this->triangle(triangle, a, b, c);
 
                 bounds box;
-                box.min = collision_vector3_type::min(a, collision_vector3_type::min(b, c));
-                box.max = collision_vector3_type::max(a, collision_vector3_type::max(b, c));
+                box.min = vector3_type::min(a, vector3_type::min(b, c));
+                box.max = vector3_type::max(a, vector3_type::max(b, c));
 
                 if (overlaps(box, aQuery)) aOut.push_back(triangle);
             }

@@ -2,31 +2,31 @@
 
 #include <jfc/catch.hpp>
 
-#include <gdk/collision_scene.h>
-#include <gdk/impl_broadphase_grid.h>
-#include <gdk/impl_collider.h>
-#include <gdk/impl_collision_policy.h>
-#include <gdk/impl_collision_scene.h>
-#include <gdk/impl_dynamic_broadphase_grid.h>
-#include <gdk/sphere_collider.h>
+#include <gdk/collisions/scene.h>
+#include <gdk/collisions/impl_broadphase_grid.h>
+#include <gdk/collisions/impl_collider.h>
+#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/sphere_collider.h>
 
 #include <algorithm>
 #include <memory>
 #include <unordered_set>
 #include <vector>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
-    constexpr collision_delta_time_type DELTA_TIME = 1.0f / 60.0f;
+    constexpr delta_time_type DELTA_TIME = 1.0f / 60.0f;
 
     struct fixture final {
-        collision_scene_ptr_type pScene;
+        scene_ptr_type pScene;
         std::vector<sphere_collider_ptr_type> handles;
         std::vector<impl_collider_ptr_type> bodies;
 
-        void add(const collision_vector3_type &aPosition, const collision_floating_point_type aRadius,
-            const collision_vector3_type &aVelocity = collision_vector3_type::zero) {
+        void add(const vector3_type &aPosition, const floating_point_type aRadius,
+            const vector3_type &aVelocity = vector3_type::zero) {
             auto pSphere = pScene->make_sphere_collider();
             pSphere->set_radius(aRadius);
             pSphere->set_position(aPosition);
@@ -153,8 +153,8 @@ TEST_CASE("gdk::impl_dynamic_broadphase_grid grows when a scene spreads out", "[
     const auto packedCells = grid.occupied_cell_count();
 
     for (std::size_t i = 0; i < fixture.handles.size(); ++i)
-        fixture.handles[i]->set_position({static_cast<collision_floating_point_type>(i) * 37.0f,
-            6.0f, static_cast<collision_floating_point_type>(i) * 23.0f});
+        fixture.handles[i]->set_position({static_cast<floating_point_type>(i) * 37.0f,
+            6.0f, static_cast<floating_point_type>(i) * 23.0f});
 
     fixture.handles.back()->set_position(fixture.handles.front()->transform().translation());
 

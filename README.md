@@ -1,6 +1,6 @@
 # gdk-collisions
 
-3D collision detection and resolution in C++17
+3D collision detection and resolution in C++20
 
 ## Collider pairs
 

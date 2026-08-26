@@ -2,48 +2,48 @@
 
 #include <jfc/catch.hpp>
 
-#include <gdk/impl_collision_policy.h>
-#include <gdk/impl_narrow_phase.h>
-#include <gdk/collision_exception.h>
-#include <gdk/impl_heightfield_data.h>
-#include <gdk/impl_mesh_data.h>
-#include <gdk/impl_shape.h>
-#include <gdk/overlap.h>
+#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/impl_narrow_phase.h>
+#include <gdk/collisions/exception.h>
+#include <gdk/collisions/impl_heightfield_data.h>
+#include <gdk/collisions/impl_mesh_data.h>
+#include <gdk/collisions/impl_shape.h>
+#include <gdk/collisions/overlap.h>
 
 #include <utility>
 #include <vector>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
-    constexpr collision_floating_point_type TIME_MARGIN = 1e-5f;
-    constexpr collision_floating_point_type NORMAL_MARGIN = 1e-4f;
+    constexpr floating_point_type TIME_MARGIN = 1e-5f;
+    constexpr floating_point_type NORMAL_MARGIN = 1e-4f;
 
     const impl_collision_policy policy = {};
 
     struct body final {
-        collision_shape_type shape;
+        shape_type shape;
         shape_kinematics kinematics;
     };
 
-    body make_sphere(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero) {
+    body make_sphere(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero) {
         return body{sphere_shape{0.5f}, {aPosition, aVelocity}};
     }
 
-    body make_capsule(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero,
-        const collision_floating_point_type aHalfHeight = 0.5f,
-        const collision_quaternion_type &aOrientation = collision_quaternion_type::identity) {
+    body make_capsule(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero,
+        const floating_point_type aHalfHeight = 0.5f,
+        const quaternion_type &aOrientation = quaternion_type::identity) {
         return body{capsule_shape{0.5f, aHalfHeight}, {aPosition, aVelocity, aOrientation}};
     }
 
-    [[nodiscard]] collision_quaternion_type quarter_turn_about_z() {
-        return collision_quaternion_type(collision_vector3_type{0, 0, 3.14159265f / 2.0f});
+    [[nodiscard]] quaternion_type quarter_turn_about_z() {
+        return quaternion_type(vector3_type{0, 0, 3.14159265f / 2.0f});
     }
 
-    body make_triangle(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero) {
+    body make_triangle(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero) {
         return body{triangle_shape{{-1, 0, -1}, {1, 0, -1}, {0, 0, 1}}, {aPosition, aVelocity}};
     }
 
@@ -53,16 +53,16 @@ namespace {
         return quad;
     }
 
-    body make_mesh(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero,
-        const collision_quaternion_type &aOrientation = collision_quaternion_type::identity) {
+    body make_mesh(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero,
+        const quaternion_type &aOrientation = quaternion_type::identity) {
         return body{mesh_shape{unit_quad()}, {aPosition, aVelocity, aOrientation}};
     }
 
     template <typename sampler_type>
     [[nodiscard]] heightfield_data_ptr_type make_heightfield_data(const std::size_t aColumns,
         const std::size_t aRows, const sampler_type &aSampler) {
-        std::vector<collision_floating_point_type> heights(aColumns * aRows);
+        std::vector<floating_point_type> heights(aColumns * aRows);
 
         for (std::size_t row = 0; row < aRows; ++row)
             for (std::size_t column = 0; column < aColumns; ++column)
@@ -75,29 +75,29 @@ namespace {
     body make_heightfield(const std::size_t aColumns, const std::size_t aRows, const sampler_type &aSampler) {
         return body{heightfield_shape{std::dynamic_pointer_cast<const impl_heightfield_data>(
             make_heightfield_data(aColumns, aRows, aSampler))},
-            {collision_vector3_type::zero, collision_vector3_type::zero}};
+            {vector3_type::zero, vector3_type::zero}};
     }
 
-    body make_obb(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero,
-        const collision_quaternion_type &aOrientation = collision_quaternion_type::identity,
-        const collision_vector3_type &aHalfExtents = {0.5f, 0.5f, 0.5f}) {
+    body make_obb(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero,
+        const quaternion_type &aOrientation = quaternion_type::identity,
+        const vector3_type &aHalfExtents = {0.5f, 0.5f, 0.5f}) {
         return body{obb_shape{aHalfExtents}, {aPosition, aVelocity, aOrientation}};
     }
 
-    body make_box(const collision_vector3_type &aPosition,
-        const collision_vector3_type &aVelocity = collision_vector3_type::zero) {
+    body make_box(const vector3_type &aPosition,
+        const vector3_type &aVelocity = vector3_type::zero) {
         return body{box_shape{{0.5f, 0.5f, 0.5f}}, {aPosition, aVelocity}};
     }
 
     [[nodiscard]] std::optional<overlap> overlap_of(const body &aSubject, const body &aOther,
-        const collision_delta_time_type aDeltaTime) {
+        const delta_time_type aDeltaTime) {
         return narrow_phase_overlap(aSubject.shape, aSubject.kinematics,
             aOther.shape, aOther.kinematics, aDeltaTime, policy);
     }
 
-    void require_vector_near(const collision_vector3_type &aActual, const collision_vector3_type &aExpected,
-        const collision_floating_point_type aMargin) {
+    void require_vector_near(const vector3_type &aActual, const vector3_type &aExpected,
+        const floating_point_type aMargin) {
         REQUIRE(aActual.x == Approx(aExpected.x).margin(aMargin));
         REQUIRE(aActual.y == Approx(aExpected.y).margin(aMargin));
         REQUIRE(aActual.z == Approx(aExpected.z).margin(aMargin));
@@ -265,7 +265,7 @@ TEST_CASE("gdk::overlap capsule is a superset of sphere", "[gdk::collision]")
     SECTION("degenerate capsule reproduces the sphere head on result")
     {
         const auto viaCapsule = overlap_of(make_capsule({-2, 0, 0}, {1, 0, 0}, 0.0f),
-            make_capsule({0, 0, 0}, collision_vector3_type::zero, 0.0f), 2.0f);
+            make_capsule({0, 0, 0}, vector3_type::zero, 0.0f), 2.0f);
 
         REQUIRE(viaCapsule.has_value());
         REQUIRE(viaCapsule->entry_time == Approx(1.0f).margin(1e-3f));
@@ -275,7 +275,7 @@ TEST_CASE("gdk::overlap capsule is a superset of sphere", "[gdk::collision]")
     SECTION("degenerate capsule reproduces the sphere miss")
     {
         REQUIRE_FALSE(overlap_of(make_capsule({-2, 2, 0}, {1, 0, 0}, 0.0f),
-            make_capsule({0, 0, 0}, collision_vector3_type::zero, 0.0f), 2.0f).has_value());
+            make_capsule({0, 0, 0}, vector3_type::zero, 0.0f), 2.0f).has_value());
     }
 }
 
@@ -352,7 +352,7 @@ TEST_CASE("gdk::overlap a capsule's segment follows its orientation", "[gdk::col
     SECTION("the same capsule laid on its side reaches far enough to touch")
     {
         const auto result = overlap_of(make_sphere({1.2f, 0, 0}),
-            make_capsule({0, 0, 0}, collision_vector3_type::zero, 0.5f, quarter_turn_about_z()), 0.0f);
+            make_capsule({0, 0, 0}, vector3_type::zero, 0.5f, quarter_turn_about_z()), 0.0f);
 
         REQUIRE(result.has_value());
     }
@@ -361,7 +361,7 @@ TEST_CASE("gdk::overlap a capsule's segment follows its orientation", "[gdk::col
     {
         REQUIRE(overlap_of(make_sphere({0, 1.2f, 0}), make_capsule({0, 0, 0}), 0.0f).has_value());
         REQUIRE_FALSE(overlap_of(make_sphere({0, 1.2f, 0}),
-            make_capsule({0, 0, 0}, collision_vector3_type::zero, 0.5f, quarter_turn_about_z()),
+            make_capsule({0, 0, 0}, vector3_type::zero, 0.5f, quarter_turn_about_z()),
             0.0f).has_value());
     }
 }
@@ -393,8 +393,8 @@ TEST_CASE("gdk::overlap an oriented box at identity matches an axis aligned one"
 
 TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::collision]")
 {
-    const auto fortyFiveAboutZ = collision_quaternion_type(
-        collision_vector3_type{0, 0, 3.14159265f / 4.0f});
+    const auto fortyFiveAboutZ = quaternion_type(
+        vector3_type{0, 0, 3.14159265f / 4.0f});
 
     SECTION("unrotated box does not reach the probe")
     {
@@ -404,13 +404,13 @@ TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::colli
     SECTION("rotated box does")
     {
         REQUIRE(overlap_of(make_sphere({1.15f, 0, 0}),
-            make_obb({0, 0, 0}, collision_vector3_type::zero, fortyFiveAboutZ), 0.0f).has_value());
+            make_obb({0, 0, 0}, vector3_type::zero, fortyFiveAboutZ), 0.0f).has_value());
     }
 
     SECTION("two rotated boxes meet corner to corner")
     {
         const auto result = overlap_of(make_obb({-2, 0, 0}, {1, 0, 0}, fortyFiveAboutZ),
-            make_obb({0, 0, 0}, collision_vector3_type::zero, fortyFiveAboutZ), 2.0f);
+            make_obb({0, 0, 0}, vector3_type::zero, fortyFiveAboutZ), 2.0f);
 
         REQUIRE(result.has_value());
         REQUIRE(result->entry_time == Approx(0.586f).margin(2e-2f));
@@ -419,8 +419,8 @@ TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::colli
 
     SECTION("the reported translation actually separates the boxes")
     {
-        const auto overlapping = make_obb({-1.2f, 0, 0}, collision_vector3_type::zero, fortyFiveAboutZ);
-        const auto other = make_obb({0, 0, 0}, collision_vector3_type::zero, fortyFiveAboutZ);
+        const auto overlapping = make_obb({-1.2f, 0, 0}, vector3_type::zero, fortyFiveAboutZ);
+        const auto other = make_obb({0, 0, 0}, vector3_type::zero, fortyFiveAboutZ);
 
         const auto before = overlap_of(overlapping, other, 0.0f);
         REQUIRE(before.has_value());
@@ -428,7 +428,7 @@ TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::colli
 
         const auto separated = make_obb(
             overlapping.kinematics.position + before->contact_normal * before->penetration,
-            collision_vector3_type::zero, fortyFiveAboutZ);
+            vector3_type::zero, fortyFiveAboutZ);
 
         const auto after = overlap_of(separated, other, 0.0f);
         REQUIRE_FALSE(after.has_value());
@@ -437,7 +437,7 @@ TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::colli
     SECTION("rotated boxes closer than their diagonal reach start overlapped")
     {
         const auto result = overlap_of(make_obb({-1.2f, 0, 0}, {1, 0, 0}, fortyFiveAboutZ),
-            make_obb({0, 0, 0}, collision_vector3_type::zero, fortyFiveAboutZ), 2.0f);
+            make_obb({0, 0, 0}, vector3_type::zero, fortyFiveAboutZ), 2.0f);
 
         REQUIRE(result.has_value());
         REQUIRE(result->entry_time == Approx(0.0f).margin(1e-3f));
@@ -448,7 +448,7 @@ TEST_CASE("gdk::overlap a rotated box occupies a different volume", "[gdk::colli
 
 TEST_CASE("gdk::overlap every shape pair reports symmetrically", "[gdk::collision]")
 {
-    const std::vector<std::pair<const char *, collision_shape_type>> shapes = {
+    const std::vector<std::pair<const char *, shape_type>> shapes = {
         {"sphere",  sphere_shape{0.5f}},
         {"box",     box_shape{{0.5f, 0.5f, 0.5f}}},
         {"capsule", capsule_shape{0.5f, 0.5f}},
@@ -470,8 +470,8 @@ TEST_CASE("gdk::overlap every shape pair reports symmetrically", "[gdk::collisio
 
             INFO(first.first << " vs " << second.first);
 
-            const body a{first.second, {{-0.6f, 0, 0}, collision_vector3_type::zero}};
-            const body b{second.second, {{0, 0, 0}, collision_vector3_type::zero}};
+            const body a{first.second, {{-0.6f, 0, 0}, vector3_type::zero}};
+            const body b{second.second, {{0, 0, 0}, vector3_type::zero}};
 
             const auto forward = overlap_of(a, b, 0.0f);
             const auto reverse = overlap_of(b, a, 0.0f);
@@ -505,8 +505,8 @@ TEST_CASE("gdk::overlap a buried body is pushed out, not further in", "[gdk::col
 
 TEST_CASE("gdk::overlap a moving body inside geometry is still detected", "[gdk::collision]")
 {
-    for (const auto velocity : {collision_vector3_type{0, 0, 0}, collision_vector3_type{1, 0, 0},
-        collision_vector3_type{0.001f, 0, 0}}) {
+    for (const auto velocity : {vector3_type{0, 0, 0}, vector3_type{1, 0, 0},
+        vector3_type{0.001f, 0, 0}}) {
         INFO("velocity " << velocity.x);
         const auto result = overlap_of(make_sphere({0, 0, 0}, velocity), make_box({0, 0, 0}), 1.0f);
 
@@ -554,7 +554,7 @@ TEST_CASE("gdk::overlap every shape meets a triangle's face", "[gdk::collision]"
 TEST_CASE("gdk::overlap triangle against triangle is refused, not silently missed", "[gdk::collision]")
 {
     REQUIRE_THROWS_AS(overlap_of(make_triangle({0, 0, 0}), make_triangle({0, 0, 0}), 1.0f),
-        collision_exception);
+        exception);
 }
 
 TEST_CASE("gdk::overlap every shape meets a mesh's surface", "[gdk::collision]")
@@ -562,7 +562,7 @@ TEST_CASE("gdk::overlap every shape meets a mesh's surface", "[gdk::collision]")
     const auto mesh = make_mesh({0, 0, 0});
 
     const auto check = [&](const char *aLabel, const body &aBody,
-        const collision_floating_point_type aExpectedTime) {
+        const floating_point_type aExpectedTime) {
         INFO(aLabel);
         const auto result = overlap_of(aBody, mesh, 1.0f);
         REQUIRE(result.has_value());
@@ -585,7 +585,7 @@ TEST_CASE("gdk::overlap a mesh is bounded by its triangles", "[gdk::collision]")
 TEST_CASE("gdk::overlap a mesh carries its collider's transform", "[gdk::collision]")
 {
     const auto result = overlap_of(make_sphere({-5, 0, 0}, {10, 0, 0}),
-        make_mesh({0, 0, 0}, collision_vector3_type::zero, quarter_turn_about_z()), 1.0f);
+        make_mesh({0, 0, 0}, vector3_type::zero, quarter_turn_about_z()), 1.0f);
 
     REQUIRE(result.has_value());
     REQUIRE(result->entry_time == Approx(0.45f).margin(TIME_MARGIN));
@@ -612,14 +612,14 @@ TEST_CASE("gdk::overlap mesh against mesh reports nothing rather than throwing",
 
 TEST_CASE("gdk::overlap a mesh with no geometry overlaps nothing", "[gdk::collision]")
 {
-    const body empty{mesh_shape{}, {{0, 0, 0}, collision_vector3_type::zero}};
+    const body empty{mesh_shape{}, {{0, 0, 0}, vector3_type::zero}};
     REQUIRE_FALSE(overlap_of(make_sphere({0, 5, 0}, {0, -10, 0}), empty, 1.0f).has_value());
     REQUIRE_FALSE(overlap_of(empty, make_sphere({0, 0, 0}), 1.0f).has_value());
 }
 
 TEST_CASE("gdk::overlap a mesh's hierarchy narrows the triangles tested", "[gdk::collision]")
 {
-    std::vector<collision_vector3_type> vertices;
+    std::vector<vector3_type> vertices;
     std::vector<std::uint32_t> indices;
     constexpr int N = 200;
 
@@ -642,7 +642,7 @@ TEST_CASE("gdk::overlap a mesh's hierarchy narrows the triangles tested", "[gdk:
 
     REQUIRE(candidates.size() < 100);
 
-    const body grid{mesh_shape{pMesh}, {{0, 0, 0}, collision_vector3_type::zero}};
+    const body grid{mesh_shape{pMesh}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0, 5, 0}, {0, -10, 0}), grid, 1.0f);
     REQUIRE(result.has_value());
     REQUIRE(result->entry_time == Approx(0.45f).margin(TIME_MARGIN));
@@ -650,13 +650,13 @@ TEST_CASE("gdk::overlap a mesh's hierarchy narrows the triangles tested", "[gdk:
 
 TEST_CASE("gdk::overlap a glancing approach is not missed", "[gdk::collision]")
 {
-    const body wall{box_shape{{5, 200, 200}}, {{-5, 0, 0}, collision_vector3_type::zero}};
+    const body wall{box_shape{{5, 200, 200}}, {{-5, 0, 0}, vector3_type::zero}};
 
     for (int degrees = 0; degrees <= 75; degrees += 5) {
         INFO(degrees << " degrees off the surface normal");
 
         const auto radians = degrees * 3.14159265f / 180.0f;
-        const collision_vector3_type direction{-std::cos(radians), 0, std::sin(radians)};
+        const vector3_type direction{-std::cos(radians), 0, std::sin(radians)};
 
         REQUIRE(overlap_of(make_sphere({5, 0, 0}, direction * 20.0f), wall, 1.0f).has_value());
     }
@@ -664,7 +664,7 @@ TEST_CASE("gdk::overlap a glancing approach is not missed", "[gdk::collision]")
 
 TEST_CASE("gdk::overlap a genuine near miss is still a miss", "[gdk::collision]")
 {
-    const body wall{box_shape{{5, 5, 5}}, {{-5, 0, 0}, collision_vector3_type::zero}};
+    const body wall{box_shape{{5, 5, 5}}, {{-5, 0, 0}, vector3_type::zero}};
 
     REQUIRE_FALSE(overlap_of(make_sphere({2, 0, -10}, {0, 0, 20}), wall, 1.0f).has_value());
     REQUIRE_FALSE(overlap_of(make_sphere({4, 0, -10}, {-1, 0, 20}), wall, 1.0f).has_value());
@@ -711,7 +711,7 @@ TEST_CASE("gdk::overlap a seam contact reports the surface's normal", "[gdk::col
     const auto pQuad = std::dynamic_pointer_cast<const impl_mesh_data>(
         impl_mesh_data::make({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
 
-    const body floor{mesh_shape{pQuad}, {{0, 0, 0}, collision_vector3_type::zero}};
+    const body floor{mesh_shape{pQuad}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0.4f, 0.45f, -0.4f}), floor, 1.0f / 60.0f);
 
     REQUIRE(result.has_value());
@@ -723,12 +723,12 @@ TEST_CASE("gdk::overlap correcting a seam normal never removes the contact", "[g
     const auto pRamp = std::dynamic_pointer_cast<const impl_mesh_data>(
         impl_mesh_data::make({{-1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {-1, -1, 1}}, {0, 1, 2, 0, 2, 3}));
 
-    const body ramp{mesh_shape{pRamp}, {{0, 0, 0}, collision_vector3_type::zero}};
+    const body ramp{mesh_shape{pRamp}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0, 5, 0}, {0, -10, 0}), ramp, 1.0f);
 
     REQUIRE(result.has_value());
 
-    const auto expected = collision_vector3_type{-1, 1, 0}.normal();
+    const auto expected = vector3_type{-1, 1, 0}.normal();
     require_vector_near(result->contact_normal, expected, 1e-2f);
 }
 
@@ -737,7 +737,7 @@ TEST_CASE("gdk::overlap every shape meets a heightfield's surface", "[gdk::colli
     const auto flat = make_heightfield(5, 5, [](std::size_t, std::size_t) { return 0.0f; });
 
     const auto check = [&](const char *aLabel, const body &aBody,
-        const collision_floating_point_type aExpectedTime) {
+        const floating_point_type aExpectedTime) {
         INFO(aLabel);
         const auto result = overlap_of(aBody, flat, 1.0f);
         REQUIRE(result.has_value());
@@ -768,7 +768,7 @@ TEST_CASE("gdk::overlap a heightfield's samples shape its surface", "[gdk::colli
     const auto result = overlap_of(make_sphere({0, 8, 0}, {0, -10, 0}), ramp, 1.0f);
 
     REQUIRE(result.has_value());
-    require_vector_near(result->contact_normal, collision_vector3_type{-1, 1, 0}.normal(), 1e-2f);
+    require_vector_near(result->contact_normal, vector3_type{-1, 1, 0}.normal(), 1e-2f);
 }
 
 TEST_CASE("gdk::overlap a heightfield flags flat seams but not a ridge", "[gdk::collision]")
@@ -801,12 +801,12 @@ TEST_CASE("gdk::overlap heightfields do not collide with each other or with mesh
 
 TEST_CASE("gdk::overlap malformed heightfield dimensions are refused at build time", "[gdk::collision]")
 {
-    const std::vector<collision_floating_point_type> nine(9, 0.0f);
+    const std::vector<floating_point_type> nine(9, 0.0f);
 
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(1, 3, nine), collision_exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 1, nine), collision_exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 4, nine), collision_exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 3, nine, {0, 1}), collision_exception);  
+    REQUIRE_THROWS_AS(impl_heightfield_data::make(1, 3, nine), exception);      
+    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 1, nine), exception);      
+    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 4, nine), exception);      
+    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 3, nine, {0, 1}), exception);  
     REQUIRE_NOTHROW(impl_heightfield_data::make(3, 3, nine));
 }
 
@@ -833,7 +833,7 @@ TEST_CASE("gdk::overlap geometry can be read back through the public interface",
     SECTION("terrain reports its sample spacing")
     {
         const auto pTerrain = impl_heightfield_data::make(3, 4,
-            std::vector<collision_floating_point_type>(12, 0.0f), {2.0f, 0.5f});
+            std::vector<floating_point_type>(12, 0.0f), {2.0f, 0.5f});
 
         REQUIRE(pTerrain->columns() == 3);
         REQUIRE(pTerrain->rows() == 4);
@@ -855,12 +855,12 @@ TEST_CASE("gdk::overlap geometry can be read back through the public interface",
 
 TEST_CASE("gdk::overlap malformed mesh geometry is refused at build time", "[gdk::collision]")
 {
-    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1}), collision_exception);
-    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 7}), collision_exception);
+    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1}), exception);
+    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 7}), exception);
     REQUIRE_NOTHROW(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 2}));
 }
 
-TEST_CASE("gdk::narrow_phase_penetration answers without any motion", "[gdk::collision]")
+TEST_CASE("gdk::collisions::narrow_phase_penetration answers without any motion", "[gdk::collision]")
 {
     const impl_collision_policy policy;
 
@@ -894,11 +894,11 @@ TEST_CASE("gdk::narrow_phase_penetration answers without any motion", "[gdk::col
     }
 
     SECTION("a capsule across a rotated box's edge reports a depth") {
-        collision_quaternion_type rotation;
+        quaternion_type rotation;
         rotation.set_from_euler({0.3f, 0.6f, 0.4f});
 
-        const auto subject = make_capsule({0.6f, 0.3f, 0}, collision_vector3_type::zero);
-        const auto other = make_obb({0, 0, 0}, collision_vector3_type::zero, rotation);
+        const auto subject = make_capsule({0.6f, 0.3f, 0}, vector3_type::zero);
+        const auto other = make_obb({0, 0, 0}, vector3_type::zero, rotation);
 
         const auto result = narrow_phase_penetration(subject.shape, subject.kinematics,
             other.shape, other.kinematics, policy);

@@ -1,7 +1,7 @@
 // © Joseph Cameron - All Rights Reserved
 
 #include <iterator>
-#include <gdk/impl_broadphase_grid.h>
+#include <gdk/collisions/impl_broadphase_grid.h>
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <utility>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 std::size_t broadphase_cell_hasher::operator()(const broadphase_cell_key &aKey) const noexcept {
     // GOLDEN_RATIO_64BIT: 2^64 / φ, used in many hash combiners to scatter values.
@@ -30,8 +30,8 @@ std::size_t broadphase_cell_hasher::operator()(const broadphase_cell_key &aKey) 
     return static_cast<std::size_t>(h);
 }
 
-broadphase_cell_key gdk::broadphase_cell_coord(const impl_collision_policy &aPolicy,
-    const collision_vector3_type &aValue) {
+broadphase_cell_key gdk::collisions::broadphase_cell_coord(const impl_collision_policy &aPolicy,
+    const vector3_type &aValue) {
     return broadphase_cell_key{
         static_cast<int>(std::floor(aValue.x / aPolicy.BROAD_PHASE_CELL_SIZE)),
         static_cast<int>(std::floor(aValue.y / aPolicy.BROAD_PHASE_CELL_SIZE)),
@@ -39,8 +39,8 @@ broadphase_cell_key gdk::broadphase_cell_coord(const impl_collision_policy &aPol
     };
 }
 
-std::uint64_t gdk::broadphase_morton_code(const impl_collision_policy &aPolicy,
-    const collision_vector3_type &aValue) {
+std::uint64_t gdk::collisions::broadphase_morton_code(const impl_collision_policy &aPolicy,
+    const vector3_type &aValue) {
     const auto cell = broadphase_cell_coord(aPolicy, aValue);
 
     // Spread 21 bits out to every third bit, so three of them interleave into 63.
@@ -150,7 +150,7 @@ void impl_broadphase_grid::insert(const impl_collider_ptr_type &aBody, const imp
 }
 
 void impl_broadphase_grid::gather_neighbours(const impl_collider &aCollider,
-    const collision_delta_time_type aDeltaTime, collider_id_set &aSeen,
+    const delta_time_type aDeltaTime, collider_id_set &aSeen,
     std::vector<neighbour> &aOutNeighbours) const {
     gather_overlapping_excluding(aCollider.broad_phase_swept_bounds(aDeltaTime), &aCollider,
         aSeen, aOutNeighbours);

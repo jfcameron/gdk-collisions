@@ -2,22 +2,22 @@
 
 #include <jfc/catch.hpp>
 
-#include <gdk/collider.h>
-#include <gdk/box_collider.h>
-#include <gdk/capsule_collider.h>
-#include <gdk/collision_events.h>
-#include <gdk/compound_collider.h>
-#include <gdk/obb_collider.h>
-#include <gdk/plane_collider.h>
-#include <gdk/raycast_hit.h>
-#include <gdk/collision_scene.h>
-#include <gdk/impl_collision_scene.h>
-#include <gdk/heightfield_collider.h>
-#include <gdk/impl_capsule_collider.h>
-#include <gdk/impl_heightfield_data.h>
-#include <gdk/impl_mesh_data.h>
-#include <gdk/mesh_collider.h>
-#include <gdk/sphere_collider.h>
+#include <gdk/collisions/collider.h>
+#include <gdk/collisions/box_collider.h>
+#include <gdk/collisions/capsule_collider.h>
+#include <gdk/collisions/events.h>
+#include <gdk/collisions/compound_collider.h>
+#include <gdk/collisions/obb_collider.h>
+#include <gdk/collisions/plane_collider.h>
+#include <gdk/collisions/raycast_hit.h>
+#include <gdk/collisions/scene.h>
+#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/heightfield_collider.h>
+#include <gdk/collisions/impl_capsule_collider.h>
+#include <gdk/collisions/impl_heightfield_data.h>
+#include <gdk/collisions/impl_mesh_data.h>
+#include <gdk/collisions/mesh_collider.h>
+#include <gdk/collisions/sphere_collider.h>
 
 #include <algorithm>
 #include <limits>
@@ -26,13 +26,13 @@
 #include <utility>
 #include <vector>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
     struct fixture final {
         std::vector<collision_event> collisions;
         std::vector<trigger_event> triggers;
-        collision_scene_ptr_type scene;
+        scene_ptr_type scene;
 
         fixture()
         : scene(impl_collision_scene::make(
@@ -40,7 +40,7 @@ namespace {
             [this](trigger_event e) { triggers.push_back(e); }))
         {}
 
-        void update(const collision_delta_time_type aDeltaTime) {
+        void update(const delta_time_type aDeltaTime) {
             scene->update(aDeltaTime);
             scene->process_events();
         }
@@ -52,14 +52,14 @@ namespace {
         }
     };
 
-    void require_vector_near(const collision_vector3_type &aActual, const collision_vector3_type &aExpected,
-        const collision_floating_point_type aMargin) {
+    void require_vector_near(const vector3_type &aActual, const vector3_type &aExpected,
+        const floating_point_type aMargin) {
         REQUIRE(aActual.x == Approx(aExpected.x).margin(aMargin));
         REQUIRE(aActual.y == Approx(aExpected.y).margin(aMargin));
         REQUIRE(aActual.z == Approx(aExpected.z).margin(aMargin));
     }
 
-    [[nodiscard]] mesh_data_ptr_type make_quad_mesh(const collision_floating_point_type aHalfSize) {
+    [[nodiscard]] mesh_data_ptr_type make_quad_mesh(const floating_point_type aHalfSize) {
         return impl_mesh_data::make(
             {{-aHalfSize, 0, -aHalfSize}, {aHalfSize, 0, -aHalfSize},
              {aHalfSize, 0, aHalfSize}, {-aHalfSize, 0, aHalfSize}},
@@ -67,11 +67,11 @@ namespace {
     }
 
     [[nodiscard]] mesh_data_ptr_type make_open_box_mesh() {
-        std::vector<collision_vector3_type> vertices;
+        std::vector<vector3_type> vertices;
         std::vector<std::uint32_t> indices;
 
-        const auto quad = [&](const collision_vector3_type &aA, const collision_vector3_type &aB,
-            const collision_vector3_type &aC, const collision_vector3_type &aD) {
+        const auto quad = [&](const vector3_type &aA, const vector3_type &aB,
+            const vector3_type &aC, const vector3_type &aD) {
             const auto base = static_cast<std::uint32_t>(vertices.size());
             vertices.insert(vertices.end(), {aA, aB, aC, aD});
             indices.insert(indices.end(), {base, base + 1u, base + 2u, base, base + 2u, base + 3u});
@@ -88,7 +88,7 @@ namespace {
     template <typename sampler_type>
     [[nodiscard]] heightfield_data_ptr_type make_terrain(const std::size_t aColumns,
         const std::size_t aRows, const sampler_type &aSampler) {
-        std::vector<collision_floating_point_type> heights(aColumns * aRows);
+        std::vector<floating_point_type> heights(aColumns * aRows);
 
         for (std::size_t row = 0; row < aRows; ++row)
             for (std::size_t column = 0; column < aColumns; ++column)
@@ -103,12 +103,12 @@ namespace {
     }
 
     const_box_collider_ptr_type add_static_box_at_origin(const fixture &aFixture) {
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         return aFixture.scene->make_static_axis_aligned_box_collider(identity, {0.5f, 0.5f, 0.5f});
     }
 }
 
-TEST_CASE("gdk::collision_scene stops a head on approach at the surface", "[gdk::collision]")
+TEST_CASE("gdk::scene stops a head on approach at the surface", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -125,7 +125,7 @@ TEST_CASE("gdk::collision_scene stops a head on approach at the surface", "[gdk:
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene slides along a surface instead of sticking", "[gdk::collision]")
+TEST_CASE("gdk::scene slides along a surface instead of sticking", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -141,7 +141,7 @@ TEST_CASE("gdk::collision_scene slides along a surface instead of sticking", "[g
     REQUIRE(position.y > 0.2f);
 }
 
-TEST_CASE("gdk::collision_scene reports enter then stay then exit", "[gdk::collision]")
+TEST_CASE("gdk::scene reports enter then stay then exit", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -162,7 +162,7 @@ TEST_CASE("gdk::collision_scene reports enter then stay then exit", "[gdk::colli
     REQUIRE(f.count(event_type::exit) == 1);
 }
 
-TEST_CASE("gdk::collision_scene slides a sphere held against a surface", "[gdk::collision]")
+TEST_CASE("gdk::scene slides a sphere held against a surface", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -177,7 +177,7 @@ TEST_CASE("gdk::collision_scene slides a sphere held against a surface", "[gdk::
     REQUIRE(pSphere->transform().translation().y == Approx(0.3f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene slides a box held against a surface", "[gdk::collision]")
+TEST_CASE("gdk::scene slides a box held against a surface", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -192,7 +192,7 @@ TEST_CASE("gdk::collision_scene slides a box held against a surface", "[gdk::col
     REQUIRE(pBox->transform().translation().y == Approx(0.3f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene moves freely when clear of a surface", "[gdk::collision]")
+TEST_CASE("gdk::scene moves freely when clear of a surface", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -208,7 +208,7 @@ TEST_CASE("gdk::collision_scene moves freely when clear of a surface", "[gdk::co
     REQUIRE(pSphere->transform().translation().x == Approx(-1.05f).margin(1e-3f));
 }
 
-TEST_CASE("gdk::collision_scene sizes a box from its half extents", "[gdk::collision]")
+TEST_CASE("gdk::scene sizes a box from its half extents", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -223,7 +223,7 @@ TEST_CASE("gdk::collision_scene sizes a box from its half extents", "[gdk::colli
     REQUIRE(pBox->half_extents().x == Approx(1.0f));
 }
 
-TEST_CASE("gdk::collision_scene sizes a sphere from its radius", "[gdk::collision]")
+TEST_CASE("gdk::scene sizes a sphere from its radius", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -237,7 +237,7 @@ TEST_CASE("gdk::collision_scene sizes a sphere from its radius", "[gdk::collisio
     REQUIRE(pSphere->transform().translation().x == Approx(-1.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene separates two dynamic colliders", "[gdk::collision]")
+TEST_CASE("gdk::scene separates two dynamic colliders", "[gdk::collision]")
 {
     fixture f;
     const auto pA = f.scene->make_sphere_collider();
@@ -255,11 +255,11 @@ TEST_CASE("gdk::collision_scene separates two dynamic colliders", "[gdk::collisi
 
 namespace {
     [[nodiscard]] mesh_data_ptr_type open_box_mesh() {
-        std::vector<collision_vector3_type> vertices;
+        std::vector<vector3_type> vertices;
         std::vector<std::uint32_t> indices;
 
-        const auto quad = [&](const collision_vector3_type &a, const collision_vector3_type &b,
-            const collision_vector3_type &c, const collision_vector3_type &d) {
+        const auto quad = [&](const vector3_type &a, const vector3_type &b,
+            const vector3_type &c, const vector3_type &d) {
             const auto base = static_cast<std::uint32_t>(vertices.size());
             vertices.insert(vertices.end(), {a, b, c, d});
             indices.insert(indices.end(), {base, base + 1u, base + 2u, base, base + 2u, base + 3u});
@@ -273,24 +273,24 @@ namespace {
         return impl_mesh_data::make(std::move(vertices), std::move(indices));
     }
 
-    [[nodiscard]] collision_floating_point_type worst_step_when_settled(
-        const collision_vector3_type &aDrive, const collision_floating_point_type aSpin,
-        const collision_response_handler &aHandler) {
+    [[nodiscard]] floating_point_type worst_step_when_settled(
+        const vector3_type &aDrive, const floating_point_type aSpin,
+        const response_handler &aHandler) {
         fixture f;
 
-        const auto pMesh = f.scene->make_static_mesh_collider(collision_matrix4x4_type::identity,
+        const auto pMesh = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
             open_box_mesh());
 
         const auto pCapsule = f.scene->make_capsule_collider(aHandler);
         pCapsule->set_position({0, 0.2f, 0});
 
-        std::vector<collision_vector3_type> path;
+        std::vector<vector3_type> path;
 
         for (int frame = 0; frame < 400; ++frame) {
             pCapsule->add_velocity(aDrive);
 
             if (aSpin != 0) {
-                collision_quaternion_type turn;
+                quaternion_type turn;
                 turn.set_from_euler({0, 0, aSpin});
                 pCapsule->add_rotation(turn);
             }
@@ -299,7 +299,7 @@ namespace {
             path.push_back(pCapsule->transform().translation());
         }
 
-        collision_floating_point_type worst = 0;
+        floating_point_type worst = 0;
         for (std::size_t i = path.size() - 100; i + 1 < path.size(); ++i)
             worst = std::max(worst, (path[i + 1] - path[i]).length());
 
@@ -309,21 +309,21 @@ namespace {
 }
 
 namespace {
-    [[nodiscard]] mesh_data_ptr_type descending_valley(const collision_floating_point_type aHalfWidth,
-        const collision_floating_point_type aWallHeight) {
-        std::vector<collision_vector3_type> vertices;
+    [[nodiscard]] mesh_data_ptr_type descending_valley(const floating_point_type aHalfWidth,
+        const floating_point_type aWallHeight) {
+        std::vector<vector3_type> vertices;
         std::vector<std::uint32_t> indices;
 
-        const auto quad = [&](const collision_vector3_type &a, const collision_vector3_type &b,
-            const collision_vector3_type &c, const collision_vector3_type &d) {
+        const auto quad = [&](const vector3_type &a, const vector3_type &b,
+            const vector3_type &c, const vector3_type &d) {
             const auto base = static_cast<std::uint32_t>(vertices.size());
             vertices.insert(vertices.end(), {a, b, c, d});
             indices.insert(indices.end(), {base, base + 1u, base + 2u, base, base + 2u, base + 3u});
         };
 
         for (int i = 0; i < 40; ++i) {
-            const auto z0 = static_cast<collision_floating_point_type>(i);
-            const auto z1 = static_cast<collision_floating_point_type>(i + 1);
+            const auto z0 = static_cast<floating_point_type>(i);
+            const auto z1 = static_cast<floating_point_type>(i + 1);
             const auto y0 = -0.25f * z0;
             const auto y1 = -0.25f * z1;
 
@@ -336,10 +336,10 @@ namespace {
         return impl_mesh_data::make(std::move(vertices), std::move(indices));
     }
 
-    [[nodiscard]] collision_floating_point_type valley_travel(const collision_response_handler &aHandler) {
+    [[nodiscard]] floating_point_type valley_travel(const response_handler &aHandler) {
         fixture f;
 
-        const auto pValley = f.scene->make_static_mesh_collider(collision_matrix4x4_type::identity,
+        const auto pValley = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
             descending_valley(1.0f, 4.0f));   
 
         const auto pBody = f.scene->make_sphere_collider(aHandler);
@@ -355,45 +355,45 @@ namespace {
     }
 }
 
-TEST_CASE("gdk::collision_response_handler can slide along a crease rather than wedging in it",
+TEST_CASE("gdk::response_handler can slide along a crease rather than wedging in it",
     "[gdk::collision]")
 {
     const auto wedging = valley_travel([](collider &aThis, const contact_context &aContact) {
         const auto velocity = aThis.velocity();
-        const auto into = velocity.dot_product(aContact.collision_normal);
-        if (into >= 0) return collision_vector3_type::zero;
-        return (velocity - aContact.collision_normal * into) - velocity;
+        const auto into = velocity.dot_product(aContact.normal);
+        if (into >= 0) return vector3_type::zero;
+        return (velocity - aContact.normal * into) - velocity;
     });
 
     REQUIRE(wedging < 0.5f);
-    REQUIRE(valley_travel(collision_response_handlers::slide_preserving_speed()) > 5.0f);
+    REQUIRE(valley_travel(response_handlers::slide_preserving_speed()) > 5.0f);
 }
 
-TEST_CASE("gdk::collision_scene settles a capsule driven into a mesh", "[gdk::collision]")
+TEST_CASE("gdk::scene settles a capsule driven into a mesh", "[gdk::collision]")
 {
     SECTION("against one surface, turning")
     {
-        REQUIRE(worst_step_when_settled({0, -4, 0}, 0.02f, collision_response_handlers::slide_projecting()) < 0.03f);
+        REQUIRE(worst_step_when_settled({0, -4, 0}, 0.02f, response_handlers::slide_projecting()) < 0.03f);
     }
 
     SECTION("into a three-surface corner, not turning")
     {
-        REQUIRE(worst_step_when_settled({-4, -4, -4}, 0.0f, collision_response_handlers::slide_projecting())
+        REQUIRE(worst_step_when_settled({-4, -4, -4}, 0.0f, response_handlers::slide_projecting())
             == Approx(0.0f).margin(1e-5f));
     }
 
     SECTION("into a three-surface corner, turning")
     {
-        REQUIRE(worst_step_when_settled({-4, -4, -4}, 0.02f, collision_response_handlers::slide_projecting()) < 0.03f);
+        REQUIRE(worst_step_when_settled({-4, -4, -4}, 0.02f, response_handlers::slide_projecting()) < 0.03f);
     }
 }
 
-TEST_CASE("gdk::collision_response_handlers collide_and_slide keeps its speed in a corner",
+TEST_CASE("gdk::collisions::response_handlers collide_and_slide keeps its speed in a corner",
     "[gdk::collision]")
 {
     const auto rescaling = worst_step_when_settled({-4, -4, -4}, 0.02f,
-        collision_response_handlers::slide_preserving_speed());
-    const auto projecting = worst_step_when_settled({-4, -4, -4}, 0.02f, collision_response_handlers::slide_projecting());
+        response_handlers::slide_preserving_speed());
+    const auto projecting = worst_step_when_settled({-4, -4, -4}, 0.02f, response_handlers::slide_projecting());
 
     REQUIRE(projecting < 0.03f);
     REQUIRE(rescaling > projecting * 4);
@@ -405,14 +405,14 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
     fixture f;
 
     const auto z_angle_of = [](const collider &aBody) {
-        const auto turned = rotate(aBody.rotation(), collision_vector3_type{1, 0, 0});
+        const auto turned = rotate(aBody.rotation(), vector3_type{1, 0, 0});
         return std::atan2(turned.y, turned.x);
     };
 
-    const auto accumulate = [&f](const collision_floating_point_type aStep, const int aTimes) {
+    const auto accumulate = [&f](const floating_point_type aStep, const int aTimes) {
         const auto pBody = f.scene->make_capsule_collider();
 
-        collision_quaternion_type turn;
+        quaternion_type turn;
         turn.set_from_euler({0, 0, aStep});
 
         for (int i = 0; i < aTimes; ++i) pBody->add_rotation(turn);
@@ -434,7 +434,7 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
         for (const auto step : {+0.02f, -0.02f}) {
             const auto pBody = f.scene->make_capsule_collider();
 
-            collision_quaternion_type turn;
+            quaternion_type turn;
             turn.set_from_euler({0, 0, step});
 
             auto previous = z_angle_of(*pBody);
@@ -455,10 +455,10 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
         for (const auto step : {+0.02f, -0.02f}) {
             const auto pBody = accumulate(step, 50);
 
-            const collision_vector3_type probe{0.3f, 0.5f, -0.8f};
+            const vector3_type probe{0.3f, 0.5f, -0.8f};
             const auto viaQuaternion = rotate(pBody->rotation(), probe);
 
-            const collision_vector4_type probe4{probe.x, probe.y, probe.z, 1.0f};
+            const vector4_type probe4{probe.x, probe.y, probe.z, 1.0f};
             const auto viaMatrix = pBody->transform() * probe4;
 
             REQUIRE(viaQuaternion.x == Approx(viaMatrix.x).margin(1e-4f));
@@ -487,7 +487,7 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
         const auto pCapsule = f.scene->make_capsule_collider();
         pCapsule->set_position({0, 1.5f, 0});
 
-        collision_quaternion_type turn;
+        quaternion_type turn;
         turn.set_from_euler({0, 0, 0.02f});
 
         for (int frame = 0; frame < 120; ++frame) {
@@ -509,14 +509,14 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
     {
         const auto pBody = f.scene->make_capsule_collider();
 
-        collision_quaternion_type quarter;
+        quaternion_type quarter;
         quarter.set_from_euler({0, 0, 3.14159265f * 0.5f});
 
         pBody->add_rotation(quarter);
         pBody->add_rotation(quarter);
 
         const auto up = pBody->rotation();
-        const collision_vector3_type localY{0, 1, 0};
+        const vector3_type localY{0, 1, 0};
         const auto turned = rotate(up, localY);
 
         REQUIRE(turned.y == Approx(-1.0f).margin(1e-4f));
@@ -526,15 +526,15 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
     {
         const auto pBody = f.scene->make_obb_collider();
 
-        collision_quaternion_type turn;
+        quaternion_type turn;
         turn.set_from_euler({0.3f, -0.7f, 1.1f});
 
-        collision_matrix4x4_type transform;
+        matrix4x4_type transform;
         transform.set_rotation(turn);
 
         std::dynamic_pointer_cast<impl_collider>(pBody)->set_transform(transform);
 
-        const collision_vector3_type probe{0.3f, 0.5f, -0.8f};
+        const vector3_type probe{0.3f, 0.5f, -0.8f};
         const auto expected = rotate(turn, probe);
         const auto actual = rotate(pBody->rotation(), probe);
 
@@ -545,10 +545,10 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
 
     SECTION("a rotated static puts its geometry where the transform says")
     {
-        collision_quaternion_type quarter;
+        quaternion_type quarter;
         quarter.set_from_euler({0, 0, 3.14159265f * 0.5f});
 
-        collision_matrix4x4_type transform;
+        matrix4x4_type transform;
         transform.set_rotation(quarter);
 
         const auto pRotated = f.scene->make_static_compound_collider(transform,
@@ -565,7 +565,7 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
 
     SECTION("a turned capsule collides along its new axis")
     {
-        const auto pGround = f.scene->make_static_plane_collider(collision_matrix4x4_type::identity);
+        const auto pGround = f.scene->make_static_plane_collider(matrix4x4_type::identity);
 
         const auto pBody = f.scene->make_capsule_collider();
         pBody->set_radius(0.25f);
@@ -573,13 +573,13 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
         pBody->set_position({0, 4, 0});
 
         const auto pWall = f.scene->make_static_sphere_collider(
-            [] { collision_matrix4x4_type t; t.set_translation({1.4f, 4, 0}); return t; }(), 0.5f);
+            [] { matrix4x4_type t; t.set_translation({1.4f, 4, 0}); return t; }(), 0.5f);
 
         pBody->add_velocity({0, 0, 0});
         f.update(1.0f / 60.0f);
         REQUIRE(f.count(event_type::enter) == 0);
 
-        collision_quaternion_type quarter;
+        quaternion_type quarter;
         quarter.set_from_euler({0, 0, 3.14159265f * 0.5f});
         pBody->add_rotation(quarter);
 
@@ -591,7 +591,7 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
     }
 }
 
-TEST_CASE("gdk::collision_scene reports a dynamic pair once, not once per participant", "[gdk::collision]")
+TEST_CASE("gdk::scene reports a dynamic pair once, not once per participant", "[gdk::collision]")
 {
     fixture f;
     const auto pA = f.scene->make_sphere_collider();
@@ -605,7 +605,7 @@ TEST_CASE("gdk::collision_scene reports a dynamic pair once, not once per partic
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene splits penetration between two dynamic colliders", "[gdk::collision]")
+TEST_CASE("gdk::scene splits penetration between two dynamic colliders", "[gdk::collision]")
 {
     fixture f;
     const auto pA = f.scene->make_sphere_collider();
@@ -623,7 +623,7 @@ TEST_CASE("gdk::collision_scene splits penetration between two dynamic colliders
     REQUIRE(b == Approx(+0.5f).margin(1e-3f));
 }
 
-TEST_CASE("gdk::collision_scene leaves a struck body alone at a clean impact", "[gdk::collision]")
+TEST_CASE("gdk::scene leaves a struck body alone at a clean impact", "[gdk::collision]")
 {
     fixture f;
     const auto pMover = f.scene->make_sphere_collider();
@@ -638,11 +638,11 @@ TEST_CASE("gdk::collision_scene leaves a struck body alone at a clean impact", "
     REQUIRE(pMover->transform().translation().x == Approx(-1.0f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene does not slide when the movement mode is none", "[gdk::collision]")
+TEST_CASE("gdk::scene does not slide when the movement mode is none", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
-    const auto pSphere = f.scene->make_sphere_collider(collision_response_handlers::null_opt);
+    const auto pSphere = f.scene->make_sphere_collider(response_handlers::null_opt);
     pSphere->set_position({-1.5f, 0, 0});
 
     pSphere->add_velocity({1.0f, 0.25f, 0});
@@ -655,10 +655,10 @@ TEST_CASE("gdk::collision_scene does not slide when the movement mode is none", 
     REQUIRE(pWall->half_extents().x == Approx(0.5f));   
 }
 
-TEST_CASE("gdk::collision_scene lets bodies pass through a trigger", "[gdk::collision]")
+TEST_CASE("gdk::scene lets bodies pass through a trigger", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pVolume = f.scene->make_static_sphere_trigger(identity, 0.5f);
     const auto pSphere = f.scene->make_sphere_collider();
     pSphere->set_position({-2, 0, 0});
@@ -672,10 +672,10 @@ TEST_CASE("gdk::collision_scene lets bodies pass through a trigger", "[gdk::coll
     REQUIRE(f.collisions.empty());
 }
 
-TEST_CASE("gdk::collision_scene reports trigger enter, stay and exit", "[gdk::collision]")
+TEST_CASE("gdk::scene reports trigger enter, stay and exit", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pVolume = f.scene->make_static_sphere_trigger(identity, 0.5f);
     const auto pSphere = f.scene->make_sphere_collider();
     pSphere->set_position({-2, 0, 0});
@@ -696,10 +696,10 @@ TEST_CASE("gdk::collision_scene reports trigger enter, stay and exit", "[gdk::co
     REQUIRE(count(event_type::exit) == 1);
 }
 
-TEST_CASE("gdk::collision_scene does not displace a trigger", "[gdk::collision]")
+TEST_CASE("gdk::scene does not displace a trigger", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_axis_aligned_box_collider(identity, {0.5f, 0.5f, 0.5f});
     const auto pTrigger = f.scene->make_sphere_trigger();
     pTrigger->set_position({-2, 0, 0});
@@ -720,10 +720,10 @@ TEST_CASE("gdk::collision_scene does not displace a trigger", "[gdk::collision]"
     REQUIRE(count(event_type::exit) == 1);
 }
 
-TEST_CASE("gdk::collision_scene collides against a compound's individual parts", "[gdk::collision]")
+TEST_CASE("gdk::scene collides against a compound's individual parts", "[gdk::collision]")
 {
     const auto build = [](const fixture &f) {
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         auto pWall = f.scene->make_static_compound_collider(identity, [](compound_collider &aBuild) {
             aBuild.add_box({0, +1.5f, 0}, {0.5f, 0.5f, 0.5f});
             aBuild.add_box({0, -1.5f, 0}, {0.5f, 0.5f, 0.5f});
@@ -764,10 +764,10 @@ TEST_CASE("gdk::collision_scene collides against a compound's individual parts",
     }
 }
 
-TEST_CASE("gdk::collision_scene reports one contact for a compound, not one per part", "[gdk::collision]")
+TEST_CASE("gdk::scene reports one contact for a compound, not one per part", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_compound_collider(identity, [](compound_collider &aBuild) {
         aBuild.add_box({0, +0.4f, 0}, {0.5f, 0.5f, 0.5f});
         aBuild.add_box({0, -0.4f, 0}, {0.5f, 0.5f, 0.5f});
@@ -784,7 +784,7 @@ TEST_CASE("gdk::collision_scene reports one contact for a compound, not one per 
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene keeps a rotating capsule out of the surface it is pressed against",
+TEST_CASE("gdk::scene keeps a rotating capsule out of the surface it is pressed against",
     "[gdk::collision]")
 {
     fixture f;
@@ -801,13 +801,13 @@ TEST_CASE("gdk::collision_scene keeps a rotating capsule out of the surface it i
 
     const auto lowest_point_of = [&pCapsule] {
         const auto centre = pCapsule->transform().translation();
-        const auto axis = rotate(pCapsule->rotation(), collision_vector3_type{0, 0.5f, 0});
+        const auto axis = rotate(pCapsule->rotation(), vector3_type{0, 0.5f, 0});
         return std::min(centre.y + axis.y, centre.y - axis.y) - 0.5f;
     };
 
     REQUIRE(lowest_point_of() == Approx(0.5f).margin(1e-4f));
 
-    collision_quaternion_type turn;
+    quaternion_type turn;
     turn.set_from_euler({0, 0, 0.02f});   
 
     constexpr float NEAR_PARALLEL_LOW = 1.396f;    
@@ -841,7 +841,7 @@ TEST_CASE("gdk::collision_scene keeps a rotating capsule out of the surface it i
 
     REQUIRE(pBox->transform().translation().y == Approx(0.0f).margin(1e-5f));
 
-    const auto finalAxis = rotate(pCapsule->rotation(), collision_vector3_type{0, 0.5f, 0});
+    const auto finalAxis = rotate(pCapsule->rotation(), vector3_type{0, 0.5f, 0});
     REQUIRE(std::abs(finalAxis.y) < 0.45f);   
     REQUIRE(lowest_point_of() == Approx(0.5f).margin(1e-2f));
 }
@@ -849,7 +849,7 @@ TEST_CASE("gdk::collision_scene keeps a rotating capsule out of the surface it i
 TEST_CASE("gdk::collider turning into a neighbour does not displace an immovable one",
     "[gdk::collision]")
 {
-    const auto settle = [](const collision_floating_point_type aWeight) {
+    const auto settle = [](const floating_point_type aWeight) {
         fixture f;
 
         const auto pBox = f.scene->make_axis_aligned_box_collider();
@@ -859,7 +859,7 @@ TEST_CASE("gdk::collider turning into a neighbour does not displace an immovable
         const auto pCapsule = f.scene->make_capsule_collider();
         pCapsule->set_position({0, 1.6f, 0});
 
-        collision_quaternion_type turn;
+        quaternion_type turn;
         turn.set_from_euler({0, 0, 0.02f});
 
         for (int frame = 0; frame < 120; ++frame) {
@@ -876,13 +876,13 @@ TEST_CASE("gdk::collider turning into a neighbour does not displace an immovable
     REQUIRE(settle(0.0f) == Approx(0.0f).margin(1e-5f));
 }
 
-TEST_CASE("gdk::collision_scene rotates a compound's parts with it", "[gdk::collision]")
+TEST_CASE("gdk::scene rotates a compound's parts with it", "[gdk::collision]")
 {
-    const auto arm_reaches = [](const bool aTurned, const collision_vector3_type &aWhere) {
+    const auto arm_reaches = [](const bool aTurned, const vector3_type &aWhere) {
         fixture f;
-        collision_matrix4x4_type transform;
-        if (aTurned) transform.set_rotation(collision_quaternion_type(
-            collision_vector3_type{0, 0, 3.14159265f / 2.0f}));
+        matrix4x4_type transform;
+        if (aTurned) transform.set_rotation(quaternion_type(
+            vector3_type{0, 0, 3.14159265f / 2.0f}));
 
         const auto pWall = f.scene->make_static_compound_collider(transform, [](compound_collider &aBuild) {
             aBuild.add_box({0, 2.0f, 0}, {0.5f, 0.5f, 0.5f});
@@ -909,10 +909,10 @@ TEST_CASE("gdk::collision_scene rotates a compound's parts with it", "[gdk::coll
     }
 }
 
-TEST_CASE("gdk::collision_scene rests a body on a ground plane", "[gdk::collision]")
+TEST_CASE("gdk::scene rests a body on a ground plane", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pGround = f.scene->make_static_plane_collider(identity);
     const auto pSphere = f.scene->make_sphere_collider();
     pSphere->set_position({0, 5, 0});
@@ -925,10 +925,10 @@ TEST_CASE("gdk::collision_scene rests a body on a ground plane", "[gdk::collisio
     REQUIRE(pSphere->transform().translation().y == Approx(0.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene planes are infinite", "[gdk::collision]")
+TEST_CASE("gdk::scene planes are infinite", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pGround = f.scene->make_static_plane_collider(identity);
     const auto pSphere = f.scene->make_sphere_collider();
     pSphere->set_position({500, 5, -300});
@@ -943,11 +943,11 @@ TEST_CASE("gdk::collision_scene planes are infinite", "[gdk::collision]")
     REQUIRE(settled.x == Approx(500.0f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene tilts with its plane's transform", "[gdk::collision]")
+TEST_CASE("gdk::scene tilts with its plane's transform", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type tilted;
-    tilted.set_rotation(collision_quaternion_type(collision_vector3_type{0, 0, 3.14159265f / 6.0f}));
+    matrix4x4_type tilted;
+    tilted.set_rotation(quaternion_type(vector3_type{0, 0, 3.14159265f / 6.0f}));
 
     const auto pSlope = f.scene->make_static_plane_collider(tilted);
     const auto pSphere = f.scene->make_sphere_collider();
@@ -962,12 +962,12 @@ TEST_CASE("gdk::collision_scene tilts with its plane's transform", "[gdk::collis
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene sizes a static from its factory argument", "[gdk::collision]")
+TEST_CASE("gdk::scene sizes a static from its factory argument", "[gdk::collision]")
 {
     fixture f;
 
     SECTION("axis aligned box") {
-        collision_matrix4x4_type beneath;
+        matrix4x4_type beneath;
         beneath.set_translation({0, -0.5f, 0});
         const auto pGround = f.scene->make_static_axis_aligned_box_collider(beneath, {4, 0.5f, 4});
 
@@ -980,7 +980,7 @@ TEST_CASE("gdk::collision_scene sizes a static from its factory argument", "[gdk
     }
 
     SECTION("sphere") {
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         const auto pBall = f.scene->make_static_sphere_collider(identity, 3.0f);
 
         const auto pBody = f.scene->make_sphere_collider();
@@ -992,7 +992,7 @@ TEST_CASE("gdk::collision_scene sizes a static from its factory argument", "[gdk
     }
 
     SECTION("capsule") {
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         const auto pPost = f.scene->make_static_capsule_collider(identity, 1.0f, 4.0f);
 
         const auto pBody = f.scene->make_sphere_collider();
@@ -1004,7 +1004,7 @@ TEST_CASE("gdk::collision_scene sizes a static from its factory argument", "[gdk
     }
 
     SECTION("oriented box") {
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         const auto pBox = f.scene->make_static_obb_collider(identity, {2, 2, 2});
 
         const auto pBody = f.scene->make_sphere_collider();
@@ -1016,10 +1016,10 @@ TEST_CASE("gdk::collision_scene sizes a static from its factory argument", "[gdk
     }
 }
 
-TEST_CASE("gdk::collision_scene handles a static body far larger than a broadphase cell", "[gdk::collision]")
+TEST_CASE("gdk::scene handles a static body far larger than a broadphase cell", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type beneath;
+    matrix4x4_type beneath;
     beneath.set_translation({0, -0.5f, 0});
 
     const auto pGround = f.scene->make_static_axis_aligned_box_collider(beneath, {200.0f, 0.5f, 200.0f});
@@ -1035,10 +1035,10 @@ TEST_CASE("gdk::collision_scene handles a static body far larger than a broadpha
     REQUIRE(pSphere->transform().translation().y == Approx(0.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene raycast finds the nearest collider", "[gdk::collision]")
+TEST_CASE("gdk::scene raycast finds the nearest collider", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_axis_aligned_box_collider(identity, {0.5f, 0.5f, 0.5f});
 
     SECTION("a ray aimed at a box reports the distance to its face")
@@ -1076,12 +1076,12 @@ TEST_CASE("gdk::collision_scene raycast finds the nearest collider", "[gdk::coll
     }
 }
 
-TEST_CASE("gdk::collision_scene raycast returns the closest of several hits", "[gdk::collision]")
+TEST_CASE("gdk::scene raycast returns the closest of several hits", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type near;
+    matrix4x4_type near;
     near.set_translation({-3, 0, 0});
-    collision_matrix4x4_type far;
+    matrix4x4_type far;
     far.set_translation({3, 0, 0});
 
     const auto pNear = f.scene->make_static_axis_aligned_box_collider(near, {0.5f, 0.5f, 0.5f});
@@ -1094,9 +1094,9 @@ TEST_CASE("gdk::collision_scene raycast returns the closest of several hits", "[
     REQUIRE(hit->distance == Approx(6.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene raycast reaches every shape", "[gdk::collision]")
+TEST_CASE("gdk::scene raycast reaches every shape", "[gdk::collision]")
 {
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
 
     SECTION("sphere")
     {
@@ -1149,11 +1149,11 @@ TEST_CASE("gdk::collision_scene raycast reaches every shape", "[gdk::collision]"
     }
 }
 
-TEST_CASE("gdk::collision_scene raycast ignores triggers", "[gdk::collision]")
+TEST_CASE("gdk::scene raycast ignores triggers", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
-    collision_matrix4x4_type infront;
+    matrix4x4_type identity;
+    matrix4x4_type infront;
     infront.set_translation({-3, 0, 0});
 
     const auto pVolume = f.scene->make_static_sphere_trigger(infront, 0.5f);
@@ -1166,10 +1166,10 @@ TEST_CASE("gdk::collision_scene raycast ignores triggers", "[gdk::collision]")
     REQUIRE(hit->distance == Approx(9.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene rests a body on a static mesh floor", "[gdk::collision]")
+TEST_CASE("gdk::scene rests a body on a static mesh floor", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pFloor = f.scene->make_static_mesh_collider(identity, make_quad_mesh(5.0f));
 
     const auto pBall = f.scene->make_sphere_collider();
@@ -1184,10 +1184,10 @@ TEST_CASE("gdk::collision_scene rests a body on a static mesh floor", "[gdk::col
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene passes a body through a mesh trigger", "[gdk::collision]")
+TEST_CASE("gdk::scene passes a body through a mesh trigger", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pZone = f.scene->make_static_mesh_trigger(identity, make_quad_mesh(5.0f));
 
     const auto pBall = f.scene->make_sphere_collider();
@@ -1203,7 +1203,7 @@ TEST_CASE("gdk::collision_scene passes a body through a mesh trigger", "[gdk::co
     REQUIRE(f.count(event_type::enter) == 0);
 }
 
-TEST_CASE("gdk::collision_scene lifts a body on a kinematic mesh", "[gdk::collision]")
+TEST_CASE("gdk::scene lifts a body on a kinematic mesh", "[gdk::collision]")
 {
     fixture f;
     const auto pLift = f.scene->make_mesh_collider();
@@ -1224,7 +1224,7 @@ TEST_CASE("gdk::collision_scene lifts a body on a kinematic mesh", "[gdk::collis
     REQUIRE(pBall->transform().translation().y > 1.0f);
 }
 
-TEST_CASE("gdk::collision_scene holds events until they are asked for", "[gdk::collision]")
+TEST_CASE("gdk::scene holds events until they are asked for", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -1243,7 +1243,7 @@ TEST_CASE("gdk::collision_scene holds events until they are asked for", "[gdk::c
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene accumulates events across several updates", "[gdk::collision]")
+TEST_CASE("gdk::scene accumulates events across several updates", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -1263,10 +1263,10 @@ TEST_CASE("gdk::collision_scene accumulates events across several updates", "[gd
     REQUIRE(f.collisions.front().type == event_type::enter);
 }
 
-TEST_CASE("gdk::collision_scene takes a static's geometry at construction", "[gdk::collision]")
+TEST_CASE("gdk::scene takes a static's geometry at construction", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pFloor = f.scene->make_static_mesh_collider(identity, make_quad_mesh(5.0f));
 
     const auto pBall = f.scene->make_sphere_collider();
@@ -1287,12 +1287,12 @@ TEST_CASE("gdk::collision_scene takes a static's geometry at construction", "[gd
     REQUIRE(pStack->part_count() == 2);
 }
 
-TEST_CASE("gdk::collision_scene shares one mesh between colliders", "[gdk::collision]")
+TEST_CASE("gdk::scene shares one mesh between colliders", "[gdk::collision]")
 {
     fixture f;
     const auto pShared = make_quad_mesh(2.0f);
 
-    collision_matrix4x4_type leftTransform, rightTransform;
+    matrix4x4_type leftTransform, rightTransform;
     leftTransform.set_translation({-10, 0, 0});
     rightTransform.set_translation({10, 0, 0});
 
@@ -1301,7 +1301,7 @@ TEST_CASE("gdk::collision_scene shares one mesh between colliders", "[gdk::colli
 
     REQUIRE(pLeft->mesh() == pRight->mesh());
 
-    const auto drop = [&](const collision_floating_point_type aX) {
+    const auto drop = [&](const floating_point_type aX) {
         const auto pBall = f.scene->make_sphere_collider();
         pBall->set_position({aX, 5, 0});
         for (int frame = 0; frame < 60; ++frame) {
@@ -1316,7 +1316,7 @@ TEST_CASE("gdk::collision_scene shares one mesh between colliders", "[gdk::colli
     REQUIRE(drop(0.0f) < -1.0f);
 }
 
-TEST_CASE("gdk::collision_scene tolerates a mesh collider with no mesh", "[gdk::collision]")
+TEST_CASE("gdk::scene tolerates a mesh collider with no mesh", "[gdk::collision]")
 {
     fixture f;
     const auto pEmpty = f.scene->make_mesh_collider();
@@ -1336,7 +1336,7 @@ TEST_CASE("gdk::collision_scene tolerates a mesh collider with no mesh", "[gdk::
     REQUIRE(f.count(event_type::enter) == 0);
 }
 
-TEST_CASE("gdk::collision_scene lets two meshes coexist without throwing", "[gdk::collision]")
+TEST_CASE("gdk::scene lets two meshes coexist without throwing", "[gdk::collision]")
 {
     fixture f;
     const auto pA = f.scene->make_mesh_collider();
@@ -1358,10 +1358,10 @@ TEST_CASE("gdk::collision_scene lets two meshes coexist without throwing", "[gdk
     REQUIRE(f.count(event_type::enter) == 0);
 }
 
-TEST_CASE("gdk::collision_scene raycasts against a mesh", "[gdk::collision]")
+TEST_CASE("gdk::scene raycasts against a mesh", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pFloor = f.scene->make_static_mesh_collider(identity, make_quad_mesh(5.0f));
 
     f.update(1.0f / 60.0f);   
@@ -1375,23 +1375,23 @@ TEST_CASE("gdk::collision_scene raycasts against a mesh", "[gdk::collision]")
     REQUIRE_FALSE(f.scene->raycast({20, 10, 0}, {0, -1, 0}, 20.0f).has_value());
 }
 
-TEST_CASE("gdk::collision_scene reports the velocity a body finished its step with", "[gdk::collision]")
+TEST_CASE("gdk::scene reports the velocity a body finished its step with", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_axis_aligned_box_collider(identity, {5, 5, 0.5f});
 
     const auto pBall = f.scene->make_sphere_collider();
     pBall->set_position({0, 0, -3});
 
-    require_vector_near(pBall->resolved_velocity(), collision_vector3_type::zero, 1e-5f);
+    require_vector_near(pBall->resolved_velocity(), vector3_type::zero, 1e-5f);
 
     for (int frame = 0; frame < 40; ++frame) {
         pBall->add_velocity({2, 0, 4});
         f.update(1.0f / 60.0f);
     }
 
-    require_vector_near(pBall->velocity(), collision_vector3_type::zero, 1e-5f);
+    require_vector_near(pBall->velocity(), vector3_type::zero, 1e-5f);
 
     const auto resolved = pBall->resolved_velocity();
     REQUIRE(resolved.x > 1.0f);                                  
@@ -1399,11 +1399,11 @@ TEST_CASE("gdk::collision_scene reports the velocity a body finished its step wi
     REQUIRE(pBall->transform().translation().z <= Approx(-0.9f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene lets a caller keep its own velocity across frames", "[gdk::collision]")
+TEST_CASE("gdk::scene lets a caller keep its own velocity across frames", "[gdk::collision]")
 {
     const auto settle = [](const bool aCloseTheLoop) {
         fixture f;
-        collision_matrix4x4_type identity;
+        matrix4x4_type identity;
         const auto pTerrain = f.scene->make_static_heightfield_collider(identity,
             make_terrain(17, 17,
             [](const std::size_t aColumn, const std::size_t aRow) {
@@ -1411,16 +1411,16 @@ TEST_CASE("gdk::collision_scene lets a caller keep its own velocity across frame
             }));
 
         const auto pBall = f.scene->make_sphere_collider(
-            collision_response_handlers::slide_projecting());
+            response_handlers::slide_projecting());
         pBall->set_position({0, 2, 0});
 
         constexpr auto dt = 1.0f / 60.0f;
-        collision_vector3_type myVelocity;
-        collision_vector3_type previous;
-        collision_floating_point_type travelled = 0;
+        vector3_type myVelocity;
+        vector3_type previous;
+        floating_point_type travelled = 0;
 
         for (int frame = 0; frame < 600; ++frame) {
-            myVelocity += collision_vector3_type{0, -9.8f, 0} * dt;  
+            myVelocity += vector3_type{0, -9.8f, 0} * dt;  
             myVelocity *= std::pow(0.05f, dt);                       
             pBall->add_velocity(myVelocity);
             f.update(dt);
@@ -1443,11 +1443,11 @@ TEST_CASE("gdk::collision_scene lets a caller keep its own velocity across frame
     REQUIRE(std::abs(closed.first.x) < 0.2f);
 }
 
-TEST_CASE("gdk::collision_scene settles under a held input from every direction", "[gdk::collision]")
+TEST_CASE("gdk::scene settles under a held input from every direction", "[gdk::collision]")
 {
-    const auto settles = [](const std::vector<collision_vector3_type> &aPath, const std::size_t aTail) {
+    const auto settles = [](const std::vector<vector3_type> &aPath, const std::size_t aTail) {
         const auto first = aPath.size() - aTail;
-        collision_floating_point_type walked = 0;
+        floating_point_type walked = 0;
         for (auto i = first + 1; i < aPath.size(); ++i) walked += (aPath[i] - aPath[i - 1]).length();
 
         if (walked < 1e-3f) return true;
@@ -1468,7 +1468,7 @@ TEST_CASE("gdk::collision_scene settles under a held input from every direction"
                             << dx << "," << dy << "," << dz << ")");
 
                         fixture f;
-                        collision_matrix4x4_type identity;
+                        matrix4x4_type identity;
 
                         std::vector<const_collider_ptr_type> heldWorld;
 
@@ -1499,15 +1499,15 @@ TEST_CASE("gdk::collision_scene settles under a held input from every direction"
                         else pBody = f.scene->make_obb_collider();
 
                         pBody->set_position(world == "static box"
-                            ? collision_vector3_type{0, 3.5f, 0}
-                            : collision_vector3_type{0, -0.2f, 0});
+                            ? vector3_type{0, 3.5f, 0}
+                            : vector3_type{0, -0.2f, 0});
 
-                        const auto drive = collision_vector3_type{
-                            static_cast<collision_floating_point_type>(dx),
-                            static_cast<collision_floating_point_type>(dy),
-                            static_cast<collision_floating_point_type>(dz)}.normal() * 5.0f;
+                        const auto drive = vector3_type{
+                            static_cast<floating_point_type>(dx),
+                            static_cast<floating_point_type>(dy),
+                            static_cast<floating_point_type>(dz)}.normal() * 5.0f;
 
-                        std::vector<collision_vector3_type> path;
+                        std::vector<vector3_type> path;
                         for (int frame = 0; frame < 180; ++frame) {
                             pBody->add_velocity(drive);
                             f.update(1.0f / 60.0f);
@@ -1518,10 +1518,10 @@ TEST_CASE("gdk::collision_scene settles under a held input from every direction"
                     }
 }
 
-TEST_CASE("gdk::collision_scene settles in a concave mesh corner", "[gdk::collision]")
+TEST_CASE("gdk::scene settles in a concave mesh corner", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pBox = f.scene->make_static_mesh_collider(identity, make_open_box_mesh());
 
     const auto pBall = f.scene->make_sphere_collider();
@@ -1546,18 +1546,18 @@ TEST_CASE("gdk::collision_scene settles in a concave mesh corner", "[gdk::collis
     }
 }
 
-TEST_CASE("gdk::collision_scene slides down a uniform slope without catching", "[gdk::collision]")
+TEST_CASE("gdk::scene slides down a uniform slope without catching", "[gdk::collision]")
 {
     for (const int degrees : {5, 10, 15, 20, 25, 30, 35, 40})
         for (const auto z : {0.0f, 0.13f, 0.25f}) {
             INFO(degrees << " degree slope, travelling along z = " << z);
 
             fixture f;
-            collision_matrix4x4_type identity;
+            matrix4x4_type identity;
 
             const auto rise = std::tan(degrees * 3.14159265f / 180.0f) * 0.5f;
             const auto pSlope = f.scene->make_static_heightfield_collider(identity, impl_heightfield_data::make(33, 33, [&] {
-                std::vector<collision_floating_point_type> heights(33 * 33);
+                std::vector<floating_point_type> heights(33 * 33);
                 for (std::size_t row = 0; row < 33; ++row)
                     for (std::size_t column = 0; column < 33; ++column)
                         heights[row * 33 + column] = column * rise;
@@ -1591,10 +1591,10 @@ TEST_CASE("gdk::collision_scene slides down a uniform slope without catching", "
         }
 }
 
-TEST_CASE("gdk::collision_scene keeps a body moving while it slides on terrain", "[gdk::collision]")
+TEST_CASE("gdk::scene keeps a body moving while it slides on terrain", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pTerrain = f.scene->make_static_heightfield_collider(identity,
         make_terrain(17, 17,
         [](const std::size_t aColumn, const std::size_t aRow) {
@@ -1625,10 +1625,10 @@ TEST_CASE("gdk::collision_scene keeps a body moving while it slides on terrain",
     REQUIRE(longestFreeze < 4);
 }
 
-TEST_CASE("gdk::collision_scene pushes a body out when its rotation drives it in", "[gdk::collision]")
+TEST_CASE("gdk::scene pushes a body out when its rotation drives it in", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_axis_aligned_box_collider(identity, {5, 5, 0.5f});
 
     const auto pCapsule = f.scene->make_capsule_collider();
@@ -1647,7 +1647,7 @@ TEST_CASE("gdk::collision_scene pushes a body out when its rotation drives it in
     REQUIRE(pImplementation != nullptr);
 
     for (int frame = 0; frame < 30; ++frame) {
-        pImplementation->set_rotation(collision_quaternion_type::from_euler(
+        pImplementation->set_rotation(quaternion_type::from_euler(
             {(frame + 1) / 30.0f * 3.14159265f / 2.0f, 0, 0}));
         f.update(1.0f / 60.0f);
     }
@@ -1657,7 +1657,7 @@ TEST_CASE("gdk::collision_scene pushes a body out when its rotation drives it in
     REQUIRE(z > -4.0f);
 }
 
-TEST_CASE("gdk::collision_scene settles two bodies closing on each other", "[gdk::collision]")
+TEST_CASE("gdk::scene settles two bodies closing on each other", "[gdk::collision]")
 {
     fixture f;
     const auto pA = f.scene->make_sphere_collider();
@@ -1685,10 +1685,10 @@ TEST_CASE("gdk::collision_scene settles two bodies closing on each other", "[gdk
     }
 }
 
-TEST_CASE("gdk::collision_scene rests a body on static terrain", "[gdk::collision]")
+TEST_CASE("gdk::scene rests a body on static terrain", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pTerrain = f.scene->make_static_heightfield_collider(identity, make_flat_terrain(5, 5));
 
     const auto pBall = f.scene->make_sphere_collider();
@@ -1703,10 +1703,10 @@ TEST_CASE("gdk::collision_scene rests a body on static terrain", "[gdk::collisio
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene slides a body down a terrain slope", "[gdk::collision]")
+TEST_CASE("gdk::scene slides a body down a terrain slope", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pSlope = f.scene->make_static_heightfield_collider(identity, make_terrain(9, 9,
         [](const std::size_t aColumn, const std::size_t) { return static_cast<float>(aColumn); }));
 
@@ -1725,12 +1725,12 @@ TEST_CASE("gdk::collision_scene slides a body down a terrain slope", "[gdk::coll
     REQUIRE(position.y - (position.x + 4.0f) == Approx(0.70711f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene shares one heightfield between colliders", "[gdk::collision]")
+TEST_CASE("gdk::scene shares one heightfield between colliders", "[gdk::collision]")
 {
     fixture f;
     const auto pShared = make_flat_terrain(5, 5);
 
-    collision_matrix4x4_type leftTransform, rightTransform;
+    matrix4x4_type leftTransform, rightTransform;
     leftTransform.set_translation({-20, 0, 0});
     rightTransform.set_translation({20, 0, 0});
 
@@ -1739,7 +1739,7 @@ TEST_CASE("gdk::collision_scene shares one heightfield between colliders", "[gdk
 
     REQUIRE(pLeft->heightfield() == pRight->heightfield());
 
-    const auto drop = [&](const collision_floating_point_type aX) {
+    const auto drop = [&](const floating_point_type aX) {
         const auto pBall = f.scene->make_sphere_collider();
         pBall->set_position({aX, 5, 0});
         for (int frame = 0; frame < 60; ++frame) {
@@ -1754,7 +1754,7 @@ TEST_CASE("gdk::collision_scene shares one heightfield between colliders", "[gdk
     REQUIRE(drop(0.0f) < -1.0f);       
 }
 
-TEST_CASE("gdk::collision_scene tolerates a heightfield collider with no terrain", "[gdk::collision]")
+TEST_CASE("gdk::scene tolerates a heightfield collider with no terrain", "[gdk::collision]")
 {
     fixture f;
     const auto pEmpty = f.scene->make_heightfield_collider();
@@ -1774,10 +1774,10 @@ TEST_CASE("gdk::collision_scene tolerates a heightfield collider with no terrain
     REQUIRE(f.count(event_type::enter) == 0);
 }
 
-TEST_CASE("gdk::collision_scene raycasts against terrain", "[gdk::collision]")
+TEST_CASE("gdk::scene raycasts against terrain", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pTerrain = f.scene->make_static_heightfield_collider(identity, make_flat_terrain(5, 5));
 
     f.update(1.0f / 60.0f);     
@@ -1789,7 +1789,7 @@ TEST_CASE("gdk::collision_scene raycasts against terrain", "[gdk::collision]")
     REQUIRE_FALSE(f.scene->raycast({20, 10, 0}, {0, -1, 0}, 20.0f).has_value());
 }
 
-TEST_CASE("gdk::collision_scene halts a weight zero dynamic at a contact", "[gdk::collision]")
+TEST_CASE("gdk::scene halts a weight zero dynamic at a contact", "[gdk::collision]")
 {
     fixture f;
     const auto pMover = f.scene->make_axis_aligned_box_collider();
@@ -1808,7 +1808,7 @@ TEST_CASE("gdk::collision_scene halts a weight zero dynamic at a contact", "[gdk
     REQUIRE(pActor->transform().translation().x == Approx(0.0f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene does not stop a kinematic body", "[gdk::collision]")
+TEST_CASE("gdk::scene does not stop a kinematic body", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -1827,7 +1827,7 @@ TEST_CASE("gdk::collision_scene does not stop a kinematic body", "[gdk::collisio
     REQUIRE(pLift->transform().translation().x == Approx(2.0f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene lets a kinematic body push a dynamic one", "[gdk::collision]")
+TEST_CASE("gdk::scene lets a kinematic body push a dynamic one", "[gdk::collision]")
 {
     fixture f;
     const auto pPlatform = f.scene->make_axis_aligned_box_collider();
@@ -1849,7 +1849,7 @@ TEST_CASE("gdk::collision_scene lets a kinematic body push a dynamic one", "[gdk
     REQUIRE(gap == Approx(2.5f).margin(1e-2f));
 }
 
-TEST_CASE("gdk::collision_scene sweeps a dynamic body against a kinematic one", "[gdk::collision]")
+TEST_CASE("gdk::scene sweeps a dynamic body against a kinematic one", "[gdk::collision]")
 {
     fixture f;
     const auto pPlatform = f.scene->make_axis_aligned_box_collider();
@@ -1866,7 +1866,7 @@ TEST_CASE("gdk::collision_scene sweeps a dynamic body against a kinematic one", 
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene reports a kinematic body's contacts", "[gdk::collision]")
+TEST_CASE("gdk::scene reports a kinematic body's contacts", "[gdk::collision]")
 {
     fixture f;
     const auto pWall = add_static_box_at_origin(f);
@@ -1881,7 +1881,7 @@ TEST_CASE("gdk::collision_scene reports a kinematic body's contacts", "[gdk::col
     REQUIRE(f.count(event_type::enter) == 1);
 }
 
-TEST_CASE("gdk::collision_scene restores a weight when a body stops being kinematic", "[gdk::collision]")
+TEST_CASE("gdk::scene restores a weight when a body stops being kinematic", "[gdk::collision]")
 {
     fixture f;
     const auto pBody = f.scene->make_sphere_collider();
@@ -1897,10 +1897,10 @@ TEST_CASE("gdk::collision_scene restores a weight when a body stops being kinema
     REQUIRE(pBody->inverse_overlap_weight() == Approx(3.0f));
 }
 
-TEST_CASE("gdk::collision_scene forgets a static once its owner does", "[gdk::collision]")
+TEST_CASE("gdk::scene forgets a static once its owner does", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pSphere = f.scene->make_sphere_collider();
     pSphere->set_position({-1.5f, 0, 0});
 
@@ -1923,10 +1923,10 @@ TEST_CASE("gdk::collision_scene forgets a static once its owner does", "[gdk::co
     REQUIRE(pSphere->transform().translation().x > 1.0f);
 }
 
-TEST_CASE("gdk::collision_scene raycasts against a persistent static", "[gdk::collision]")
+TEST_CASE("gdk::scene raycasts against a persistent static", "[gdk::collision]")
 {
     fixture f;
-    collision_matrix4x4_type identity;
+    matrix4x4_type identity;
     const auto pWall = f.scene->make_static_axis_aligned_box_collider(identity, {0.5f, 0.5f, 0.5f});
 
     const auto hit = f.scene->raycast({-10, 0, 0}, {1, 0, 0}, 20.0f);
@@ -1937,45 +1937,45 @@ TEST_CASE("gdk::collision_scene raycasts against a persistent static", "[gdk::co
 }
 
 namespace {
-    [[nodiscard]] collision_vector3_type turn_by(const collision_quaternion_type &aQ,
-        const collision_vector3_type &aV) {
-        const collision_vector3_type axis{aQ.x, aQ.y, aQ.z};
-        const collision_vector3_type t{
+    [[nodiscard]] vector3_type turn_by(const quaternion_type &aQ,
+        const vector3_type &aV) {
+        const vector3_type axis{aQ.x, aQ.y, aQ.z};
+        const vector3_type t{
             2.0f * (axis.y * aV.z - axis.z * aV.y),
             2.0f * (axis.z * aV.x - axis.x * aV.z),
             2.0f * (axis.x * aV.y - axis.y * aV.x)};
-        return collision_vector3_type{
+        return vector3_type{
             aV.x + aQ.w * t.x + (axis.y * t.z - axis.z * t.y),
             aV.y + aQ.w * t.y + (axis.z * t.x - axis.x * t.z),
             aV.z + aQ.w * t.z + (axis.x * t.y - axis.y * t.x)};
     }
 
-    [[nodiscard]] collision_floating_point_type penetration_into_box(
-        const collision_vector3_type &aCapsuleCentre, const collision_quaternion_type &aCapsuleRotation,
-        const collision_floating_point_type aRadius, const collision_floating_point_type aHalfHeight,
-        const collision_vector3_type &aBoxCentre, const collision_quaternion_type &aBoxRotation,
-        const collision_vector3_type &aHalfExtents) {
-        const auto axis = turn_by(aCapsuleRotation, collision_vector3_type{0, aHalfHeight, 0});
+    [[nodiscard]] floating_point_type penetration_into_box(
+        const vector3_type &aCapsuleCentre, const quaternion_type &aCapsuleRotation,
+        const floating_point_type aRadius, const floating_point_type aHalfHeight,
+        const vector3_type &aBoxCentre, const quaternion_type &aBoxRotation,
+        const vector3_type &aHalfExtents) {
+        const auto axis = turn_by(aCapsuleRotation, vector3_type{0, aHalfHeight, 0});
         const auto a = aCapsuleCentre - axis;
         const auto b = aCapsuleCentre + axis;
 
-        collision_quaternion_type inverse;
+        quaternion_type inverse;
         inverse.w = aBoxRotation.w;
         inverse.x = -aBoxRotation.x;
         inverse.y = -aBoxRotation.y;
         inverse.z = -aBoxRotation.z;
 
-        auto nearest = std::numeric_limits<collision_floating_point_type>::max();
+        auto nearest = std::numeric_limits<floating_point_type>::max();
         constexpr int SAMPLES = 2000;
         for (int i = 0; i <= SAMPLES; ++i) {
             const auto local = turn_by(inverse,
-                (a + (b - a) * (static_cast<collision_floating_point_type>(i) / SAMPLES)) - aBoxCentre);
+                (a + (b - a) * (static_cast<floating_point_type>(i) / SAMPLES)) - aBoxCentre);
 
-            const auto clamp = [](const collision_floating_point_type aValue,
-                const collision_floating_point_type aLimit) {
+            const auto clamp = [](const floating_point_type aValue,
+                const floating_point_type aLimit) {
                 return aValue < -aLimit ? -aLimit : (aValue > aLimit ? aLimit : aValue);
             };
-            const collision_vector3_type onBox{clamp(local.x, aHalfExtents.x),
+            const vector3_type onBox{clamp(local.x, aHalfExtents.x),
                 clamp(local.y, aHalfExtents.y), clamp(local.z, aHalfExtents.z)};
 
             nearest = std::min(nearest, (local - onBox).length());
@@ -1983,23 +1983,23 @@ namespace {
         return aRadius - nearest;
     }
 
-    [[nodiscard]] collision_floating_point_type slide_penetration(
-        const collision_quaternion_type &aBoxRotation, const collision_vector3_type &aStart,
-        const collision_vector3_type &aVelocity) {
+    [[nodiscard]] floating_point_type slide_penetration(
+        const quaternion_type &aBoxRotation, const vector3_type &aStart,
+        const vector3_type &aVelocity) {
         fixture f;
 
-        const collision_vector3_type halfExtents{0.5f, 0.5f, 0.5f};
-        const collision_vector3_type boxCentre = collision_vector3_type::zero;
+        const vector3_type halfExtents{0.5f, 0.5f, 0.5f};
+        const vector3_type boxCentre = vector3_type::zero;
 
-        collision_matrix4x4_type boxTransform;
+        matrix4x4_type boxTransform;
         boxTransform.set_rotation(aBoxRotation);
         const auto pBox = f.scene->make_static_obb_collider(boxTransform, halfExtents);
 
         const auto pCapsule = f.scene->make_capsule_collider(
-            collision_response_handlers::slide_projecting());
+            response_handlers::slide_projecting());
         pCapsule->set_position(aStart);
 
-        auto worst = std::numeric_limits<collision_floating_point_type>::lowest();
+        auto worst = std::numeric_limits<floating_point_type>::lowest();
         for (int frame = 0; frame < 240; ++frame) {
             pCapsule->add_velocity(aVelocity);
             f.scene->update(1.0f / 60.0f);
@@ -2013,51 +2013,51 @@ namespace {
     }
 }
 
-TEST_CASE("gdk::collision_scene a capsule sliding on an unrotated box stays outside it", "[gdk::collision]")
+TEST_CASE("gdk::scene a capsule sliding on an unrotated box stays outside it", "[gdk::collision]")
 {
-    REQUIRE(slide_penetration(collision_quaternion_type::identity, {-3, 0, 0}, {3, 0, 0}) < 1e-3f);
+    REQUIRE(slide_penetration(quaternion_type::identity, {-3, 0, 0}, {3, 0, 0}) < 1e-3f);
 }
 
-TEST_CASE("gdk::collision_scene a capsule sliding on a rotated obb stays outside it", "[gdk::collision]")
+TEST_CASE("gdk::scene a capsule sliding on a rotated obb stays outside it", "[gdk::collision]")
 {
-    collision_quaternion_type rotation;
+    quaternion_type rotation;
     rotation.set_from_euler({0.3f, 0.6f, 0.4f});   
 
     REQUIRE(slide_penetration(rotation, {-3, 0, 0}, {3, 0, 0}) < 1e-3f);
 }
 
-TEST_CASE("gdk::collision_scene a capsule slid shallowly across a rotated obb stays outside it",
+TEST_CASE("gdk::scene a capsule slid shallowly across a rotated obb stays outside it",
     "[gdk::collision]")
 {
-    collision_quaternion_type rotation;
+    quaternion_type rotation;
     rotation.set_from_euler({0.3f, 0.6f, 0.4f});
 
     REQUIRE(slide_penetration(rotation, {-2, 1.2f, 0}, {3, -0.4f, 0}) < 1e-3f);
 }
 
 namespace {
-    [[nodiscard]] std::vector<collision_floating_point_type> obb_slide_gaps(
-        const collision_quaternion_type &aFrame, const collision_vector3_type &aStart,
-        const collision_vector3_type &aVelocity, const int aFrames) {
+    [[nodiscard]] std::vector<floating_point_type> obb_slide_gaps(
+        const quaternion_type &aFrame, const vector3_type &aStart,
+        const vector3_type &aVelocity, const int aFrames) {
         fixture f;
 
-        const collision_vector3_type halfExtents{0.5f, 0.5f, 0.5f};
-        collision_matrix4x4_type boxTransform;
+        const vector3_type halfExtents{0.5f, 0.5f, 0.5f};
+        matrix4x4_type boxTransform;
         boxTransform.set_rotation(aFrame);
         const auto pBox = f.scene->make_static_obb_collider(boxTransform, halfExtents);
 
         const auto pCapsule = f.scene->make_capsule_collider(
-            collision_response_handlers::slide_projecting());
+            response_handlers::slide_projecting());
         pCapsule->set_position(turn_by(aFrame, aStart));
         pCapsule->set_rotation(aFrame);
 
-        std::vector<collision_floating_point_type> gaps;
+        std::vector<floating_point_type> gaps;
         for (int frame = 0; frame < aFrames; ++frame) {
             pCapsule->add_velocity(turn_by(aFrame, aVelocity));
             f.scene->update(1.0f / 60.0f);
 
             gaps.push_back(-penetration_into_box(pCapsule->transform().translation(),
-                pCapsule->rotation(), 0.5f, 0.5f, collision_vector3_type::zero, aFrame, halfExtents));
+                pCapsule->rotation(), 0.5f, 0.5f, vector3_type::zero, aFrame, halfExtents));
         }
 
         REQUIRE(pBox->half_extents().x == Approx(0.5f));   
@@ -2065,18 +2065,18 @@ namespace {
     }
 }
 
-TEST_CASE("gdk::collision_scene slides a capsule along an obb the same way in any frame",
+TEST_CASE("gdk::scene slides a capsule along an obb the same way in any frame",
     "[gdk::collision]")
 {
-    collision_quaternion_type rotated;
+    quaternion_type rotated;
     rotated.set_from_euler({0.3f, 0.6f, 0.4f});
 
-    const auto plain = obb_slide_gaps(collision_quaternion_type::identity, {-2, 0.9f, 0}, {3, -0.6f, 0}, 240);
+    const auto plain = obb_slide_gaps(quaternion_type::identity, {-2, 0.9f, 0}, {3, -0.6f, 0}, 240);
     const auto spun = obb_slide_gaps(rotated, {-2, 0.9f, 0}, {3, -0.6f, 0}, 240);
 
     REQUIRE(plain.size() == spun.size());
 
-    auto worst = collision_floating_point_type{0};
+    auto worst = floating_point_type{0};
     for (std::size_t i = 0; i < plain.size(); ++i)
         worst = std::max(worst, std::abs(plain[i] - spun[i]));
 
@@ -2085,26 +2085,26 @@ TEST_CASE("gdk::collision_scene slides a capsule along an obb the same way in an
 
 namespace {
     struct held_slide_extremes final {
-        collision_floating_point_type deepest_penetration;
-        collision_floating_point_type furthest_separation;
+        floating_point_type deepest_penetration;
+        floating_point_type furthest_separation;
     };
 
-    [[nodiscard]] held_slide_extremes held_slide(const collision_quaternion_type &aBoxRotation,
-        const collision_vector3_type &aStartDirection, const collision_vector3_type &aOrbitAxis,
-        const collision_floating_point_type aPressRadians, const int aFrames) {
+    [[nodiscard]] held_slide_extremes held_slide(const quaternion_type &aBoxRotation,
+        const vector3_type &aStartDirection, const vector3_type &aOrbitAxis,
+        const floating_point_type aPressRadians, const int aFrames) {
         fixture f;
 
-        const collision_vector3_type halfExtents{0.5f, 0.5f, 0.5f};
-        collision_matrix4x4_type boxTransform;
+        const vector3_type halfExtents{0.5f, 0.5f, 0.5f};
+        matrix4x4_type boxTransform;
         boxTransform.set_rotation(aBoxRotation);
         const auto pBox = f.scene->make_static_obb_collider(boxTransform, halfExtents);
 
         const auto pCapsule = f.scene->make_capsule_collider(
-            collision_response_handlers::slide_projecting());
+            response_handlers::slide_projecting());
         pCapsule->set_position(aStartDirection * 1.3f);
 
-        const auto cross = [](const collision_vector3_type &a, const collision_vector3_type &b) {
-            return collision_vector3_type{
+        const auto cross = [](const vector3_type &a, const vector3_type &b) {
+            return vector3_type{
                 a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
         };
 
@@ -2126,7 +2126,7 @@ namespace {
             f.scene->update(1.0f / 60.0f);
 
             const auto gap = -penetration_into_box(pCapsule->transform().translation(),
-                pCapsule->rotation(), 0.5f, 0.5f, collision_vector3_type::zero, aBoxRotation,
+                pCapsule->rotation(), 0.5f, 0.5f, vector3_type::zero, aBoxRotation,
                 halfExtents);
 
             if (gap < 0.05f) contacted = true;
@@ -2141,14 +2141,14 @@ namespace {
     }
 }
 
-TEST_CASE("gdk::collision_scene a capsule held against a rotated obb never sinks into it",
+TEST_CASE("gdk::scene a capsule held against a rotated obb never sinks into it",
     "[gdk::collision]")
 {
-    collision_quaternion_type rotation;
+    quaternion_type rotation;
     rotation.set_from_euler({0.3f, 0.6f, 0.4f});   
 
-    const collision_vector3_type starts[] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-    const collision_vector3_type axes[] = {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}};
+    const vector3_type starts[] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const vector3_type axes[] = {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}};
 
     for (const auto &start : starts) for (const auto &axis : axes) {
         if (std::abs(start.dot_product(axis)) > 0.99f) continue;   
@@ -2161,17 +2161,17 @@ TEST_CASE("gdk::collision_scene a capsule held against a rotated obb never sinks
     }
 }
 
-TEST_CASE("gdk::collision_scene a capsule held against an obb behaves the same at any rotation",
+TEST_CASE("gdk::scene a capsule held against an obb behaves the same at any rotation",
     "[gdk::collision]")
 {
-    const collision_vector3_type start{0.577f, 0.577f, 0.577f};
-    const collision_vector3_type axis{0, 1, 0};
+    const vector3_type start{0.577f, 0.577f, 0.577f};
+    const vector3_type axis{0, 1, 0};
     constexpr auto PRESS = 30.0f * 3.14159265f / 180.0f;
 
-    const auto control = held_slide(collision_quaternion_type::identity, start, axis, PRESS, 240);
+    const auto control = held_slide(quaternion_type::identity, start, axis, PRESS, 240);
     REQUIRE(control.deepest_penetration > -1e-3f);
 
-    const collision_vector3_type eulers[] = {
+    const vector3_type eulers[] = {
         {0.05f, 0, 0},              
         {0.2f, 0.1f, 0},
         {0.3f, 0.6f, 0.4f},         
@@ -2180,7 +2180,7 @@ TEST_CASE("gdk::collision_scene a capsule held against an obb behaves the same a
         {0.9f, 1.3f, 2.1f}};
 
     for (const auto &euler : eulers) {
-        collision_quaternion_type rotation;
+        quaternion_type rotation;
         rotation.set_from_euler(euler);
 
         const auto extremes = held_slide(rotation, start, axis, PRESS, 240);
@@ -2192,29 +2192,29 @@ TEST_CASE("gdk::collision_scene a capsule held against an obb behaves the same a
 
 TEST_CASE("gdk::collider transform() and rotation() describe the same box", "[gdk::collision]")
 {
-    collision_quaternion_type rotation;
+    quaternion_type rotation;
     rotation.set_from_euler({0.3f, 0.6f, 0.4f});   
 
-    collision_matrix4x4_type transform;
+    matrix4x4_type transform;
     transform.set_translation({-7, 0, 0});
     transform.set_rotation(rotation);
 
     fixture f;
-    const collision_vector3_type halfExtents{0.9f, 0.3f, 0.5f};
+    const vector3_type halfExtents{0.9f, 0.3f, 0.5f};
     const auto pBox = f.scene->make_static_obb_collider(transform, halfExtents);
 
     const auto position = pBox->transform().translation();
     const auto matrix = pBox->transform();
 
     for (int corner = 0; corner < 8; ++corner) {
-        const collision_vector3_type local{
+        const vector3_type local{
             (corner & 1) ? halfExtents.x : -halfExtents.x,
             (corner & 2) ? halfExtents.y : -halfExtents.y,
             (corner & 4) ? halfExtents.z : -halfExtents.z};
 
         const auto tested = turn_by(pBox->rotation(), local) + position;
 
-        const collision_vector3_type drawn{
+        const vector3_type drawn{
             matrix.get(0, 0) * local.x + matrix.get(1, 0) * local.y + matrix.get(2, 0) * local.z + matrix.get(3, 0),
             matrix.get(0, 1) * local.x + matrix.get(1, 1) * local.y + matrix.get(2, 1) * local.z + matrix.get(3, 1),
             matrix.get(0, 2) * local.x + matrix.get(1, 2) * local.y + matrix.get(2, 2) * local.z + matrix.get(3, 2)};
@@ -2229,19 +2229,19 @@ TEST_CASE("gdk::collider transform() and rotation() describe the same box", "[gd
     REQUIRE(recovered.z == Approx(rotation.z).margin(1e-5f));
 }
 
-TEST_CASE("gdk::collision_scene a response handler is given the scene's own tolerances",
+TEST_CASE("gdk::scene a response handler is given the scene's own tolerances",
     "[gdk::collision]")
 {
     fixture f;
 
     const impl_collision_policy policy;   
 
-    struct { bool called; collision_floating_point_type minSweptSpeed;
-        collision_floating_point_type normalizationThreshold;
-        std::size_t clipPlaneCount; collision_vector3_type lastPlane;
-        collision_vector3_type normal; collision_delta_time_type remainingTime; } seen{};
+    struct { bool called; floating_point_type minSweptSpeed;
+        floating_point_type normalizationThreshold;
+        std::size_t clipPlaneCount; vector3_type lastPlane;
+        vector3_type normal; delta_time_type remainingTime; } seen{};
 
-    const auto pGround = f.scene->make_static_plane_collider(collision_matrix4x4_type());
+    const auto pGround = f.scene->make_static_plane_collider(matrix4x4_type());
 
     const auto pBall = f.scene->make_sphere_collider(
         [&seen](collider &, const contact_context &aContact) {
@@ -2250,9 +2250,9 @@ TEST_CASE("gdk::collision_scene a response handler is given the scene's own tole
             seen.normalizationThreshold = aContact.normalization_threshold;
             seen.clipPlaneCount = aContact.clip_planes.size();
             if (!aContact.clip_planes.empty()) seen.lastPlane = aContact.clip_planes.back();
-            seen.normal = aContact.collision_normal;
+            seen.normal = aContact.normal;
             seen.remainingTime = aContact.remaining_time;
-            return collision_vector3_type::zero;
+            return vector3_type::zero;
         });
     pBall->set_position({0, 1.0f, 0});
 
@@ -2273,11 +2273,11 @@ TEST_CASE("gdk::collision_scene a response handler is given the scene's own tole
     REQUIRE(seen.remainingTime <= Approx(1.0f / 60.0f).margin(1e-6f));
 }
 
-TEST_CASE("gdk::collision_scene reports the contacts of the last step", "[gdk::collision]")
+TEST_CASE("gdk::scene reports the contacts of the last step", "[gdk::collision]")
 {
     fixture f;
 
-    collision_matrix4x4_type ground;
+    matrix4x4_type ground;
     ground.set_translation({0, -1, 0});
     const auto pGround = f.scene->make_static_plane_collider(ground);
 
@@ -2355,11 +2355,11 @@ TEST_CASE("gdk::collision_scene reports the contacts of the last step", "[gdk::c
     REQUIRE(pGround->transform().translation().y == Approx(-1.0f));   
 }
 
-TEST_CASE("gdk::collision_scene contact reporting is stable and outlives nothing", "[gdk::collision]")
+TEST_CASE("gdk::scene contact reporting is stable and outlives nothing", "[gdk::collision]")
 {
     fixture f;
 
-    collision_matrix4x4_type ground;
+    matrix4x4_type ground;
     ground.set_translation({0, -1, 0});
     const auto pGround = f.scene->make_static_plane_collider(ground);
 
@@ -2389,12 +2389,12 @@ TEST_CASE("gdk::collision_scene contact reporting is stable and outlives nothing
     f.triggers.clear();
 }
 
-TEST_CASE("gdk::collision_scene holds no strong reference to a collider between steps",
+TEST_CASE("gdk::scene holds no strong reference to a collider between steps",
     "[gdk::collision]")
 {
     fixture f;
 
-    collision_matrix4x4_type ground;
+    matrix4x4_type ground;
     ground.set_translation({0, -1, 0});
     const auto pGround = f.scene->make_static_plane_collider(ground);
 
@@ -2424,12 +2424,12 @@ TEST_CASE("gdk::collision_scene holds no strong reference to a collider between 
     REQUIRE(pGround->transform().translation().y == Approx(-1.0f));   
 }
 
-TEST_CASE("gdk::collision_scene a destroyed collider's contact is dropped, not dangled",
+TEST_CASE("gdk::scene a destroyed collider's contact is dropped, not dangled",
     "[gdk::collision]")
 {
     fixture f;
 
-    collision_matrix4x4_type ground;
+    matrix4x4_type ground;
     ground.set_translation({0, -1, 0});
     const auto pGround = f.scene->make_static_plane_collider(ground);
 
@@ -2464,17 +2464,17 @@ TEST_CASE("gdk::collision_scene a destroyed collider's contact is dropped, not d
     REQUIRE(pGround->transform().translation().y == Approx(-1.0f));
 }
 
-TEST_CASE("gdk::collision_scene releases colliders held by a chunk that stops running",
+TEST_CASE("gdk::scene releases colliders held by a chunk that stops running",
     "[gdk::collision]")
 {
-    const auto dispatcher = [](std::size_t aCount, const collision_chunk_type &aChunk) {
+    const auto dispatcher = [](std::size_t aCount, const chunk_type &aChunk) {
         for (std::size_t i = 0; i < aCount; ++i) aChunk(i);
     };
 
     const auto scene = impl_collision_scene::make([](collision_event) {}, [](trigger_event) {},
         impl_collision_policy{}, dispatcher);
 
-    collision_matrix4x4_type ground;
+    matrix4x4_type ground;
     ground.set_translation({0, -1, 0});
     const auto pGround = scene->make_static_plane_collider(ground);
 
@@ -2508,9 +2508,9 @@ TEST_CASE("gdk::collision_scene releases colliders held by a chunk that stops ru
 }
 
 namespace {
-    collision_vector3_type slide(const collision_vector3_type &aVelocity,
+    vector3_type slide(const vector3_type &aVelocity,
         const contact_context &aContact, const bool aPreserveSpeed) {
-        const auto &aCollisionNormal = aContact.collision_normal;
+        const auto &aCollisionNormal = aContact.normal;
         const auto &aClipPlanes = aContact.clip_planes;
         const auto slideThreshold = aContact.min_swept_speed;
 
@@ -2528,7 +2528,7 @@ namespace {
 
             const auto facing = plane.dot_product(aCollisionNormal);
 
-            if (facing <= -aContact.clip_plane_parallel_cosine) return collision_vector3_type::zero;
+            if (facing <= -aContact.clip_plane_parallel_cosine) return vector3_type::zero;
 
             if (facing >= aContact.clip_plane_parallel_cosine) continue;
 
@@ -2540,7 +2540,7 @@ namespace {
 
             for (std::size_t other = 0; other + 1 < aClipPlanes.size(); ++other)
                 if (other != first && slideVelocity.dot_product(aClipPlanes[other]) < 0)
-                    return collision_vector3_type::zero;
+                    return vector3_type::zero;
 
             break;
         }
@@ -2550,9 +2550,9 @@ namespace {
         return slideVelocity.normal() * velocity.length();
     }
 
-    [[nodiscard]] collision_vector3_type ask_slide(const collider &aSubject,
-        const collision_vector3_type &aVelocity, const collision_vector3_type &aContactNormal,
-        const collision_clip_planes_type &aClipPlanes) {
+    [[nodiscard]] vector3_type ask_slide(const collider &aSubject,
+        const vector3_type &aVelocity, const vector3_type &aContactNormal,
+        const clip_planes_type &aClipPlanes) {
         const impl_collision_policy policy;
         const overlap result;
 
@@ -2563,13 +2563,13 @@ namespace {
     }
 }
 
-TEST_CASE("gdk::collision_response_handlers collide_and_slide tells a vice from a flat surface",
+TEST_CASE("gdk::collisions::response_handlers collide_and_slide tells a vice from a flat surface",
     "[gdk::collision]")
 {
     fixture f;
     const auto pSubject = f.scene->make_sphere_collider();
 
-    const collision_vector3_type contactNormal{0, 1, 0};
+    const vector3_type contactNormal{0, 1, 0};
 
     constexpr float TILT = 5e-4f;
 
@@ -2578,7 +2578,7 @@ TEST_CASE("gdk::collision_response_handlers collide_and_slide tells a vice from 
         pSubject->add_velocity({0, -1, -1});
         const auto before = pSubject->velocity();
 
-        collision_vector3_type nearlySame{0, 1, TILT};
+        vector3_type nearlySame{0, 1, TILT};
         nearlySame = nearlySame.normal();
 
         const auto after = ask_slide(*pSubject, before, contactNormal, {nearlySame, contactNormal});
@@ -2593,7 +2593,7 @@ TEST_CASE("gdk::collision_response_handlers collide_and_slide tells a vice from 
         pSubject->set_velocity({0, -1, -1});
         const auto before = pSubject->velocity();
 
-        collision_vector3_type opposed{0, -1, TILT};
+        vector3_type opposed{0, -1, TILT};
         opposed = opposed.normal();
 
         const auto after = ask_slide(*pSubject, before, contactNormal, {opposed, contactNormal});
@@ -2602,10 +2602,10 @@ TEST_CASE("gdk::collision_response_handlers collide_and_slide tells a vice from 
     }
 }
 
-TEST_CASE("gdk::collision_scene the stock response handlers are the two velocity-ownership pairings",
+TEST_CASE("gdk::scene the stock response handlers are the two velocity-ownership pairings",
     "[gdk::collision]")
 {
-    const auto drive = [](const collision_response_handler &aHandler) {
+    const auto drive = [](const response_handler &aHandler) {
         fixture f;
         const auto pWall = add_static_box_at_origin(f);
 
@@ -2623,9 +2623,9 @@ TEST_CASE("gdk::collision_scene the stock response handlers are the two velocity
 
     SECTION("the three give three different answers to the same contact")
     {
-        const auto stopped = drive(collision_response_handlers::null_opt);
-        const auto projected = drive(collision_response_handlers::slide_projecting());
-        const auto preserved = drive(collision_response_handlers::slide_preserving_speed());
+        const auto stopped = drive(response_handlers::null_opt);
+        const auto projected = drive(response_handlers::slide_projecting());
+        const auto preserved = drive(response_handlers::slide_preserving_speed());
 
         REQUIRE(stopped.x <= Approx(-1.0f).margin(1e-2f));
         REQUIRE(projected.x <= Approx(-1.0f).margin(1e-2f));
@@ -2636,7 +2636,7 @@ TEST_CASE("gdk::collision_scene the stock response handlers are the two velocity
 
     SECTION("the factories default to the speed-preserving slide")
     {
-        const auto defaulted = drive(collision_response_handlers::slide_preserving_speed());
+        const auto defaulted = drive(response_handlers::slide_preserving_speed());
 
         fixture f;
         const auto pWall = add_static_box_at_origin(f);
@@ -2653,17 +2653,17 @@ TEST_CASE("gdk::collision_scene the stock response handlers are the two velocity
     }
 }
 
-TEST_CASE("gdk::collision_scene a handler can express behaviour the stock ones do not",
+TEST_CASE("gdk::scene a handler can express behaviour the stock ones do not",
     "[gdk::collision]")
 {
-    const auto drive = [](const collision_response_handler &aHandler) {
+    const auto drive = [](const response_handler &aHandler) {
         fixture f;
         const auto pWall = add_static_box_at_origin(f);
 
         const auto pSphere = f.scene->make_sphere_collider(aHandler);
         pSphere->set_position({-1.2f, 0, 0});
 
-        auto mostLeftward = collision_floating_point_type{0};
+        auto mostLeftward = floating_point_type{0};
 
         for (int frame = 0; frame < 20; ++frame) {
             pSphere->add_velocity({1.0f, 0, 0});
@@ -2677,16 +2677,16 @@ TEST_CASE("gdk::collision_scene a handler can express behaviour the stock ones d
 
     SECTION("a bounce, which none of the three modes can do")
     {
-        const collision_response_handler bounce = [](collider &aThis, const contact_context &aContact) {
+        const response_handler bounce = [](collider &aThis, const contact_context &aContact) {
             const auto velocity = aThis.velocity();
-            const auto into = velocity.dot_product(aContact.collision_normal);
-            if (into >= 0) return collision_vector3_type::zero;
+            const auto into = velocity.dot_product(aContact.normal);
+            if (into >= 0) return vector3_type::zero;
 
-            const auto reflected = velocity - aContact.collision_normal * (2.0f * into);
+            const auto reflected = velocity - aContact.normal * (2.0f * into);
             return reflected - velocity;   
         };
 
-        const auto slid = drive(collision_response_handlers::slide_preserving_speed());
+        const auto slid = drive(response_handlers::slide_preserving_speed());
         const auto bounced = drive(bounce);
 
         REQUIRE(slid == Approx(0.0f).margin(1e-3f));
@@ -2695,7 +2695,7 @@ TEST_CASE("gdk::collision_scene a handler can express behaviour the stock ones d
 
     SECTION("a handler can build on the library's slide instead of reimplementing it")
     {
-        const collision_response_handler halfSpeedSlide = [](collider &aThis,
+        const response_handler halfSpeedSlide = [](collider &aThis,
             const contact_context &aContact) {
             const auto velocity = aThis.velocity();
             const auto slid = ::slide(velocity, aContact, true);
@@ -2722,17 +2722,17 @@ TEST_CASE("gdk::collision_scene a handler can express behaviour the stock ones d
 }
 
 namespace {
-    [[nodiscard]] collision_response_handler ride_platforms() {
+    [[nodiscard]] response_handler ride_platforms() {
         return [](collider &aThis, const contact_context &aContact) {
             const auto velocity = aThis.velocity();
             auto delta = ::slide(velocity, aContact, false) - velocity;
 
-            if (aContact.collision_normal.y > 0.5f) {
+            if (aContact.normal.y > 0.5f) {
                 const auto arm = aContact.result.contact_point
                     - aContact.other.transform().translation();
                 const auto omega = aContact.other.angular_velocity();
 
-                const collision_vector3_type spin{
+                const vector3_type spin{
                     omega.y * arm.z - omega.z * arm.y,
                     omega.z * arm.x - omega.x * arm.z,
                     omega.x * arm.y - omega.y * arm.x};
@@ -2773,7 +2773,7 @@ TEST_CASE("gdk::collider angular velocity is per-frame input, like velocity", "[
             f.update(1.0f / 60.0f);
         }
 
-        const auto turnedX = turn_by(pBody->rotation(), collision_vector3_type{1, 0, 0});
+        const auto turnedX = turn_by(pBody->rotation(), vector3_type{1, 0, 0});
         REQUIRE(turnedX.x == Approx(0.0f).margin(2e-2f));
         REQUIRE(turnedX.z == Approx(-1.0f).margin(2e-2f));
     }
@@ -2786,7 +2786,7 @@ TEST_CASE("gdk::collider angular velocity is per-frame input, like velocity", "[
     }
 }
 
-TEST_CASE("gdk::collision_scene a handler can ride a moving platform", "[gdk::collision]")
+TEST_CASE("gdk::scene a handler can ride a moving platform", "[gdk::collision]")
 {
     SECTION("a translating platform, which worked before angular velocity existed")
     {
@@ -2848,12 +2848,12 @@ TEST_CASE("gdk::collider set_rotation normalises what it is given", "[gdk::colli
     const auto pBody = f.scene->make_obb_collider();
     pBody->set_half_extents({1.0f, 0.5f, 0.25f});
 
-    collision_quaternion_type wanted;
+    quaternion_type wanted;
     wanted.set_from_euler({0.3f, 0.6f, 0.4f});
 
     SECTION("a scaled quaternion is stored as the rotation it represents, at unit length")
     {
-        collision_quaternion_type overlong;
+        quaternion_type overlong;
         overlong.w = wanted.w * 3.0f;
         overlong.x = wanted.x * 3.0f;
         overlong.y = wanted.y * 3.0f;
@@ -2879,8 +2879,8 @@ TEST_CASE("gdk::collider set_rotation normalises what it is given", "[gdk::colli
 
     SECTION("drift accumulated by a caller integrating its own orientation is absorbed")
     {
-        collision_quaternion_type drifting = collision_quaternion_type::identity;
-        collision_quaternion_type step;
+        quaternion_type drifting = quaternion_type::identity;
+        quaternion_type step;
         step.set_from_euler({0, 0.02f, 0});
 
         for (int frame = 0; frame < 500; ++frame) {
@@ -2896,7 +2896,7 @@ TEST_CASE("gdk::collider set_rotation normalises what it is given", "[gdk::colli
 
     SECTION("a zero-length quaternion gives identity rather than NaN")
     {
-        collision_quaternion_type zero;
+        quaternion_type zero;
         zero.w = 0; zero.x = 0; zero.y = 0; zero.z = 0;
 
         pBody->set_rotation(zero);

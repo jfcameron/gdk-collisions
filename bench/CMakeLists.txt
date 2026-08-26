@@ -18,7 +18,7 @@ if (JFC_COLLISION_BENCH_PROFILE)
 endif()
 
 set_target_properties(gdkcollisions_bench_objects PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 
@@ -40,7 +40,7 @@ foreach(JFC_BENCH_NAME bench grid)
         Threads::Threads)
 
     set_target_properties(${JFC_BENCH_TARGET} PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
 

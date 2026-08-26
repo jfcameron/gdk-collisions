@@ -34,11 +34,34 @@ set(JFC_BUILD_TESTS "${_jfc_outer_build_tests}" CACHE BOOL "" FORCE)
 set(JFC_BUILD_DOCS "${_jfc_outer_build_docs}" CACHE BOOL "" FORCE)
 set(JFC_BUILD_BENCH "${_jfc_outer_build_bench}" CACHE BOOL "" FORCE)
 
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if (MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/permissive->)
+else()
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-pedantic>)
+    endif()
+
+    include(CheckCXXCompilerFlag)
+
+    foreach (_strict_flag "-Werror=c++20-extensions" "-Werror=c++23-extensions")
+        string(MAKE_C_IDENTIFIER "HAS${_strict_flag}" _strict_flag_symbol)
+
+        check_cxx_compiler_flag("${_strict_flag}" ${_strict_flag_symbol})
+
+        if (${_strict_flag_symbol})
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_strict_flag}>)
+        endif()
+    endforeach()
+endif()
+
 jfc_project(library
     NAME "gdkcollisions"
     VERSION 0.1
     DESCRIPTION "3d collision detection and resolution"
-    C++_STANDARD 17
+    C++_STANDARD 20
     C_STANDARD 90
     TYPE STATIC
 
@@ -55,9 +78,9 @@ jfc_project(library
         "gdkmath"
 
     SOURCE_LIST
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/collision_exception.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/collision_response_handler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/collision_scene.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/exception.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/response_handler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_axis_aligned_box.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_broadphase_grid.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_capsule_collider.cpp

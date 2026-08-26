@@ -1,13 +1,13 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/collider.h>
-#include <gdk/collision_scene.h>
-#include <gdk/impl_broadphase_grid.h>
-#include <gdk/impl_collider.h>
-#include <gdk/impl_collision_policy.h>
-#include <gdk/impl_collision_scene.h>
-#include <gdk/impl_dynamic_broadphase_grid.h>
-#include <gdk/sphere_collider.h>
+#include <gdk/collisions/collider.h>
+#include <gdk/collisions/scene.h>
+#include <gdk/collisions/impl_broadphase_grid.h>
+#include <gdk/collisions/impl_collider.h>
+#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/sphere_collider.h>
 
 #include <chrono>
 #include <cmath>
@@ -21,14 +21,14 @@
 #include <vector>
 
 namespace {
-    using namespace gdk;
+    using namespace gdk::collisions;
 
-    constexpr collision_delta_time_type DELTA_TIME = 1.0f / 60.0f;
+    constexpr delta_time_type DELTA_TIME = 1.0f / 60.0f;
     constexpr int MEASURED_FRAMES = 40;
 
     struct configuration final {
         int bodiesPerSide;
-        collision_floating_point_type spacing;
+        floating_point_type spacing;
         const char *description;
     };
 
@@ -48,7 +48,7 @@ namespace {
     }
 
     struct field final {
-        collision_scene_ptr_type pScene;
+        scene_ptr_type pScene;
         std::vector<sphere_collider_ptr_type> handles;
         std::vector<impl_collider_ptr_type> bodies;
     };
@@ -60,8 +60,8 @@ namespace {
         const auto side = aConfiguration.bodiesPerSide;
         const auto spacing = aConfiguration.spacing;
 
-        const collision_floating_point_type originX = 137.0f;
-        const collision_floating_point_type originZ = -211.0f;
+        const floating_point_type originX = 137.0f;
+        const floating_point_type originZ = -211.0f;
 
         for (int x = 0; x < side; ++x) {
             for (int z = 0; z < side; ++z) {
@@ -107,7 +107,6 @@ namespace {
 
     enum class body_order { creation, spatial, shuffled };
 
-    /// \brief the bodies physically reordered
     [[nodiscard]] std::vector<impl_collider_ptr_type> ordered_bodies(const field &aField,
         const body_order aOrder) {
         auto bodies = aField.bodies;
@@ -136,7 +135,6 @@ namespace {
         std::uint64_t checksum = 0;
     };
 
-    /// \brief every (body, cell) pair the build would produce in build order
     [[nodiscard]] std::vector<broadphase_cell_key> all_cells(const field &aField) {
         const impl_collision_policy policy;
         std::vector<broadphase_cell_key> cells;
@@ -344,7 +342,7 @@ namespace {
         for (const auto &pBody : aField.bodies)
             bounds.push_back(pBody->broad_phase_swept_bounds(DELTA_TIME));
 
-        const auto coordinate = [&policy](const collision_floating_point_type aValue) {
+        const auto coordinate = [&policy](const floating_point_type aValue) {
             return static_cast<long long>(std::floor(aValue / policy.BROAD_PHASE_CELL_SIZE));
         };
 

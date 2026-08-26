@@ -1,17 +1,17 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/collider.h>
-#include <gdk/collision_scene.h>
-#include <gdk/impl_collider.h>
-#include <gdk/impl_collision_policy.h>
-#include <gdk/impl_collision_profile.h>
-#include <gdk/box_collider.h>
-#include <gdk/capsule_collider.h>
-#include <gdk/impl_collision_scene.h>
-#include <gdk/impl_mesh_data.h>
-#include <gdk/mesh_collider.h>
-#include <gdk/plane_collider.h>
-#include <gdk/sphere_collider.h>
+#include <gdk/collisions/collider.h>
+#include <gdk/collisions/scene.h>
+#include <gdk/collisions/impl_collider.h>
+#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/impl_collision_profile.h>
+#include <gdk/collisions/box_collider.h>
+#include <gdk/collisions/capsule_collider.h>
+#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/impl_mesh_data.h>
+#include <gdk/collisions/mesh_collider.h>
+#include <gdk/collisions/plane_collider.h>
+#include <gdk/collisions/sphere_collider.h>
 
 #include <algorithm>
 #include <atomic>
@@ -29,9 +29,9 @@
 #include <vector>
 
 namespace {
-    using namespace gdk;
+    using namespace gdk::collisions;
 
-    constexpr collision_delta_time_type DELTA_TIME = 1.0f / 60.0f;
+    constexpr delta_time_type DELTA_TIME = 1.0f / 60.0f;
 
     constexpr int WARMUP_FRAMES = 20;
     constexpr int MEASURED_FRAMES = 40;
@@ -40,10 +40,10 @@ namespace {
 
     struct configuration final {
         int bodiesPerSide;
-        collision_floating_point_type spacing;
+        floating_point_type spacing;
         const char *description;
 
-        collision_floating_point_type cellSize = 0;
+        floating_point_type cellSize = 0;
 
         std::size_t chunkSize = 0;
 
@@ -100,7 +100,6 @@ namespace {
         island_summary byCell;
     };
 
-    /// \brief union-find over body indices
     class components final {
     public:
         explicit components(const std::size_t aCount) : m_Parent(aCount) {
@@ -143,7 +142,7 @@ namespace {
     };
 
     struct field final {
-        collision_scene_ptr_type pScene;
+        scene_ptr_type pScene;
 
         const_plane_collider_ptr_type pGround;
         std::vector<const_box_collider_ptr_type> groundBoxes;
@@ -156,11 +155,10 @@ namespace {
         std::vector<collider_ptr_type> bodies;
     };
 
-    /// \brief a flat triangulated floor
-    [[nodiscard]] mesh_data_ptr_type make_floor_mesh(const collision_floating_point_type aOriginX,
-        const collision_floating_point_type aOriginZ, const collision_floating_point_type aExtent,
+    [[nodiscard]] mesh_data_ptr_type make_floor_mesh(const floating_point_type aOriginX,
+        const floating_point_type aOriginZ, const floating_point_type aExtent,
         const int aCells) {
-        std::vector<collision_vector3_type> vertices;
+        std::vector<vector3_type> vertices;
         std::vector<std::uint32_t> indices;
 
         const auto step = aExtent / aCells;
@@ -207,8 +205,7 @@ namespace {
             for (auto &worker : m_Workers) worker.join();
         }
 
-        /// \brief run aChunk(i) for every i in [0, aCount), returning once all have finished
-        void run(const std::size_t aCount, const collision_chunk_type &aChunk) {
+        void run(const std::size_t aCount, const chunk_type &aChunk) {
             {
                 const std::lock_guard<std::mutex> lock(m_Mutex);
                 m_Chunk = &aChunk;
@@ -260,7 +257,7 @@ namespace {
         std::condition_variable m_Wake;
         std::condition_variable m_Done;
 
-        const collision_chunk_type *m_Chunk = nullptr;
+        const chunk_type *m_Chunk = nullptr;
         std::size_t m_Count = 0;
         std::atomic<std::size_t> m_Next{0};
         std::size_t m_Remaining = 0;
@@ -268,29 +265,28 @@ namespace {
         bool m_Stop = false;
     };
 
-    /// \brief a dispatcher over a pool that lives as long as it does.
-    [[nodiscard]] collision_task_dispatcher_type make_pool_dispatcher(
+    [[nodiscard]] task_dispatcher_type make_pool_dispatcher(
         const std::shared_ptr<thread_pool> &aPool) {
-        return [aPool](std::size_t aCount, const collision_chunk_type &aChunk) {
+        return [aPool](std::size_t aCount, const chunk_type &aChunk) {
             aPool->run(aCount, aChunk);
         };
     }
 
     void build_ground(field &aField, const configuration &aConfiguration) {
-        const collision_floating_point_type originX = 137.0f;
-        const collision_floating_point_type originZ = -211.0f;
+        const floating_point_type originX = 137.0f;
+        const floating_point_type originZ = -211.0f;
         const auto extent = aConfiguration.bodiesPerSide * aConfiguration.spacing;
 
         switch (aConfiguration.ground) {
             case ground_kind::plane:
                 aField.pGround = aField.pScene->make_static_plane_collider(
-                    collision_matrix4x4_type::identity);
+                    matrix4x4_type::identity);
                 break;
 
             case ground_kind::single_box: {
                 const auto halfSpan = extent * 0.5f + 4.0f;
 
-                collision_matrix4x4_type transform;
+                matrix4x4_type transform;
                 transform.set_translation({
                     originX + (aConfiguration.bodiesPerSide - 1) * aConfiguration.spacing * 0.5f,
                     -0.5f,
@@ -302,14 +298,12 @@ namespace {
             }
 
             case ground_kind::per_body_box: {
-                // One 1x1x1 static box under each body. Top face at y = 0, so a body of radius 0.5
-                // rests at 0.5 exactly as it does on the plane.
                 aField.groundBoxes.reserve(
                     static_cast<std::size_t>(aConfiguration.bodiesPerSide) * aConfiguration.bodiesPerSide);
 
                 for (int x = 0; x < aConfiguration.bodiesPerSide; ++x)
                     for (int z = 0; z < aConfiguration.bodiesPerSide; ++z) {
-                        collision_matrix4x4_type transform;
+                        matrix4x4_type transform;
                         transform.set_translation({originX + x * aConfiguration.spacing, -0.5f,
                             originZ + z * aConfiguration.spacing});
                         aField.groundBoxes.push_back(
@@ -323,14 +317,14 @@ namespace {
                     extent + 8.0f, std::max(aConfiguration.bodiesPerSide, 8));
 
                 aField.pGroundMesh = aField.pScene->make_static_mesh_collider(
-                    collision_matrix4x4_type::identity, aField.groundMeshData);
+                    matrix4x4_type::identity, aField.groundMeshData);
                 break;
             }
         }
     }
 
     [[nodiscard]] field build_field(const configuration &aConfiguration,
-        const collision_task_dispatcher_type &aDispatcher = {}) {
+        const task_dispatcher_type &aDispatcher = {}) {
         field result;
         result.pScene = impl_collision_scene::make(nullptr, nullptr, policy_for(aConfiguration), aDispatcher);
 
@@ -339,12 +333,12 @@ namespace {
         const auto side = aConfiguration.bodiesPerSide;
         const auto spacing = aConfiguration.spacing;
 
-        const collision_floating_point_type originX = 137.0f;
-        const collision_floating_point_type originZ = -211.0f;
+        const floating_point_type originX = 137.0f;
+        const floating_point_type originZ = -211.0f;
 
         result.bodies.reserve(static_cast<std::size_t>(side) * side);
 
-        std::vector<collision_vector3_type> positions;
+        std::vector<vector3_type> positions;
         positions.reserve(static_cast<std::size_t>(side) * side);
 
         for (int x = 0; x < side; ++x)
@@ -392,7 +386,6 @@ namespace {
         return true;
     }
 
-    /// \brief connected components over dynamic-dynamic swept bounds, both ways. \see islands
     [[nodiscard]] islands measure_islands(const field &aField) {
         std::vector<impl_collider::broadphase_bounds> bounds;
         bounds.reserve(aField.bodies.size());
@@ -421,7 +414,7 @@ namespace {
                 if (overlaps(bounds[i], bounds[j])) byBounds.join(i, j);
 
         const impl_collision_policy policy;
-        const auto coordinate = [&policy](const collision_floating_point_type aValue) {
+        const auto coordinate = [&policy](const floating_point_type aValue) {
             return static_cast<long long>(std::floor(aValue / policy.BROAD_PHASE_CELL_SIZE));
         };
 
@@ -452,7 +445,7 @@ namespace {
         }
 
 #ifdef GDK_COLLISION_PROFILE
-        collision_profile::reset();
+        profile::reset();
 #endif
 
         const auto wallStart = std::chrono::steady_clock::now();
@@ -464,7 +457,7 @@ namespace {
         averages.total = wallMilliseconds / MEASURED_FRAMES;
 
 #ifdef GDK_COLLISION_PROFILE
-        const auto &accumulated = collision_profile::accumulated();
+        const auto &accumulated = profile::accumulated();
         const double frames = accumulated.steps ? static_cast<double>(accumulated.steps) : 1.0;
         averages.total = accumulated.total_ms / frames;
         averages.rebuild = accumulated.broadphase_rebuild_ms / frames;
@@ -661,7 +654,7 @@ int main() {
     std::printf("\n| bodies | spacing | cell size | total ms | rebuild | loop | gather | narrow |\n");
     std::printf("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
 
-    const collision_floating_point_type cellSizes[] = {0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
+    const floating_point_type cellSizes[] = {0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
 
     for (const auto spacing : {3.00f, 1.02f}) {
         for (const auto cellSize : cellSizes) {

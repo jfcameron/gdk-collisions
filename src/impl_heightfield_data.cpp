@@ -1,14 +1,14 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/collision_exception.h>
-#include <gdk/impl_heightfield_data.h>
+#include <gdk/collisions/exception.h>
+#include <gdk/collisions/impl_heightfield_data.h>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
     /// \brief the two triangles of a cell, as offsets from its low corner.
@@ -19,36 +19,36 @@ namespace {
 }
 
 heightfield_data_ptr_type impl_heightfield_data::make(const std::size_t aColumns, const std::size_t aRows,
-    std::vector<collision_floating_point_type> aHeights, const collision_vector2_type &aCellSize,
-    const collision_floating_point_type aCoplanarTolerance) {
+    std::vector<floating_point_type> aHeights, const vector2_type &aCellSize,
+    const floating_point_type aCoplanarTolerance) {
     if (aColumns < 2 || aRows < 2)
-        throw collision_exception("gdk::collision: a heightfield needs at least two samples on each axis");
+        throw exception("gdk::collision: a heightfield needs at least two samples on each axis");
 
     if (aHeights.size() != aColumns * aRows)
-        throw collision_exception("gdk::collision: heightfield sample count does not match its dimensions");
+        throw exception("gdk::collision: heightfield sample count does not match its dimensions");
 
     if (aCellSize.x <= 0 || aCellSize.y <= 0)
-        throw collision_exception("gdk::collision: heightfield cell size must be positive on both axes");
+        throw exception("gdk::collision: heightfield cell size must be positive on both axes");
 
     return heightfield_data_ptr_type(new impl_heightfield_data(aColumns, aRows, std::move(aHeights),
         aCellSize, aCoplanarTolerance));
 }
 
 impl_heightfield_data::impl_heightfield_data(const std::size_t aColumns, const std::size_t aRows,
-    std::vector<collision_floating_point_type> aHeights, const collision_vector2_type &aCellSize,
-    const collision_floating_point_type aCoplanarTolerance)
+    std::vector<floating_point_type> aHeights, const vector2_type &aCellSize,
+    const floating_point_type aCoplanarTolerance)
 : m_Columns(aColumns)
 , m_Rows(aRows)
 , m_CellSize(aCellSize)
 , m_Heights(std::move(aHeights))
 {
-    m_Origin = collision_vector3_type{
+    m_Origin = vector3_type{
         -0.5f * (aColumns - 1) * aCellSize.x, 0, -0.5f * (aRows - 1) * aCellSize.y};
 
     const auto extremes = std::minmax_element(m_Heights.begin(), m_Heights.end());
 
-    m_Bounds.min = collision_vector3_type{m_Origin.x, *extremes.first, m_Origin.z};
-    m_Bounds.max = collision_vector3_type{-m_Origin.x, *extremes.second, -m_Origin.z};
+    m_Bounds.min = vector3_type{m_Origin.x, *extremes.first, m_Origin.z};
+    m_Bounds.max = vector3_type{-m_Origin.x, *extremes.second, -m_Origin.z};
 
     flag_internal_edges(aCoplanarTolerance);
 }
@@ -56,26 +56,26 @@ impl_heightfield_data::impl_heightfield_data(const std::size_t aColumns, const s
 std::size_t impl_heightfield_data::columns() const { return m_Columns; }
 std::size_t impl_heightfield_data::rows() const { return m_Rows; }
 
-collision_floating_point_type impl_heightfield_data::height(const std::size_t aColumn,
+floating_point_type impl_heightfield_data::height(const std::size_t aColumn,
     const std::size_t aRow) const {
     return m_Heights[aRow * m_Columns + aColumn];
 }
 
-collision_vector2_type impl_heightfield_data::cell_size() const { return m_CellSize; }
+vector2_type impl_heightfield_data::cell_size() const { return m_CellSize; }
 
 std::size_t impl_heightfield_data::triangle_count() const {
     return (m_Columns - 1) * (m_Rows - 1) * 2;
 }
 
-collision_vector3_type impl_heightfield_data::corner(const std::size_t aColumn, const std::size_t aRow) const {
-    return collision_vector3_type{
+vector3_type impl_heightfield_data::corner(const std::size_t aColumn, const std::size_t aRow) const {
+    return vector3_type{
         m_Origin.x + aColumn * m_CellSize.x,
         height(aColumn, aRow),
         m_Origin.z + aRow * m_CellSize.y};
 }
 
-void impl_heightfield_data::triangle(const std::uint32_t aTriangle, collision_vector3_type &aA,
-    collision_vector3_type &aB, collision_vector3_type &aC) const {
+void impl_heightfield_data::triangle(const std::uint32_t aTriangle, vector3_type &aA,
+    vector3_type &aB, vector3_type &aC) const {
     const auto cell = aTriangle / 2;
     const auto column = cell % (m_Columns - 1);
     const auto row = cell / (m_Columns - 1);
@@ -95,12 +95,12 @@ std::uint8_t impl_heightfield_data::internal_edges(const std::uint32_t aTriangle
     return m_InternalEdges[aTriangle];
 }
 
-void impl_heightfield_data::flag_internal_edges(const collision_floating_point_type aCoplanarTolerance) {
+void impl_heightfield_data::flag_internal_edges(const floating_point_type aCoplanarTolerance) {
     const auto count = static_cast<std::uint32_t>(triangle_count());
     m_InternalEdges.assign(count, 0);
 
     const auto normal_of = [this](const std::uint32_t aTriangle) {
-        collision_vector3_type a, b, c;
+        vector3_type a, b, c;
         triangle(aTriangle, a, b, c);
         return (b - a).cross_product(c - a).normal();
     };
@@ -147,8 +147,8 @@ void impl_heightfield_data::query(const bounds &aQuery, std::vector<std::uint32_
     if (aQuery.max.x < m_Bounds.min.x || aQuery.min.x > m_Bounds.max.x
         || aQuery.max.z < m_Bounds.min.z || aQuery.min.z > m_Bounds.max.z) return;
 
-    const auto to_cell = [](const collision_floating_point_type aCoordinate,
-        const collision_floating_point_type aOrigin, const collision_floating_point_type aSize,
+    const auto to_cell = [](const floating_point_type aCoordinate,
+        const floating_point_type aOrigin, const floating_point_type aSize,
         const std::size_t aLimit) {
         const auto index = static_cast<std::int64_t>(std::floor((aCoordinate - aOrigin) / aSize));
         return static_cast<std::size_t>(std::min<std::int64_t>(std::max<std::int64_t>(index, 0),

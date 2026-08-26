@@ -1,22 +1,22 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/impl_collider.h>
-#include <gdk/impl_collision_event_tracker.h>
+#include <gdk/collisions/impl_collider.h>
+#include <gdk/collisions/impl_collision_event_tracker.h>
 
 #include <algorithm>
 #include <utility>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
-impl_collision_event_tracker::impl_collision_event_tracker(collision_observer_type aCollisionObserver,
+impl_collision_event_tracker::impl_collision_event_tracker(observer_type aCollisionObserver,
     trigger_overlap_observer_type aTriggerObserver)
 : m_CollisionObserver(std::move(aCollisionObserver))
 , m_TriggerOverlapObserver(std::move(aTriggerObserver))
 {}
 
 void impl_collision_event_tracker::record(contact_collection_type &aInto, const impl_collider_ptr_type &aA,
-    const impl_collider_ptr_type &aB, const collision_vector3_type &aNormal,
-    const collision_vector3_type &aPoint, const collision_floating_point_type aPenetration) {
+    const impl_collider_ptr_type &aB, const vector3_type &aNormal,
+    const vector3_type &aPoint, const floating_point_type aPenetration) {
     auto low = aA;
     auto high = aB;
     auto normal = aNormal;
@@ -40,19 +40,19 @@ void impl_collision_event_tracker::prepare(contact_collection_type &aContacts) {
 }
 
 void impl_collision_event_tracker::record_collision(const impl_collider_ptr_type &aA,
-    const impl_collider_ptr_type &aB, const collision_vector3_type &aNormal,
-    const collision_vector3_type &aPoint, const collision_floating_point_type aPenetration) {
+    const impl_collider_ptr_type &aB, const vector3_type &aNormal,
+    const vector3_type &aPoint, const floating_point_type aPenetration) {
     record(m_Collisions, aA, aB, aNormal, aPoint, aPenetration);
 }
 
 void impl_collision_event_tracker::record_trigger(const impl_collider_ptr_type &aA, const impl_collider_ptr_type &aB) {
-    record(m_Triggers, aA, aB, collision_vector3_type::zero, collision_vector3_type::zero, 0);
+    record(m_Triggers, aA, aB, vector3_type::zero, vector3_type::zero, 0);
 }
 
 template <typename event_type>
 void impl_collision_event_tracker::emit(const contact_collection_type &aCurrent,
     const contact_collection_type &aPrevious, std::vector<event_type> &aInto) {
-    const auto append = [&aInto](const tracked_contact &aContact, const gdk::event_type aKind) {
+    const auto append = [&aInto](const tracked_contact &aContact, const gdk::collisions::event_type aKind) {
         const auto a = aContact.a.lock();
         const auto b = aContact.b.lock();
         if (!a || !b) return;
@@ -70,7 +70,7 @@ void impl_collision_event_tracker::emit(const contact_collection_type &aCurrent,
         const bool havePrevious = previous < aPrevious.size();
 
         if (haveCurrent && (!havePrevious || aCurrent[current].key < aPrevious[previous].key)) {
-            append(aCurrent[current], gdk::event_type::enter);
+            append(aCurrent[current], gdk::collisions::event_type::enter);
             ++current;
         }
         else if (havePrevious && (!haveCurrent || aPrevious[previous].key < aCurrent[current].key)) {
@@ -78,13 +78,13 @@ void impl_collision_event_tracker::emit(const contact_collection_type &aCurrent,
             ++previous;
         }
         else {
-            append(aCurrent[current], gdk::event_type::stay);
+            append(aCurrent[current], gdk::collisions::event_type::stay);
             ++current;
             ++previous;
         }
     }
 
-    for (const auto pExit : exits) append(*pExit, gdk::event_type::exit);
+    for (const auto pExit : exits) append(*pExit, gdk::collisions::event_type::exit);
 }
 
 void impl_collision_event_tracker::flush() {

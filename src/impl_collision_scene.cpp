@@ -1,21 +1,21 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/collision_types.h>
-#include <gdk/impl_axis_aligned_box.h>
-#include <gdk/impl_broadphase_grid.h>
-#include <gdk/impl_capsule_collider.h>
-#include <gdk/impl_compound_collider.h>
-#include <gdk/impl_heightfield_collider.h>
-#include <gdk/impl_mesh_collider.h>
-#include <gdk/impl_plane_collider.h>
-#include <gdk/impl_obb_collider.h>
-#include <gdk/impl_collision_event_tracker.h>
-#include <gdk/impl_collision_profile.h>
-#include <gdk/impl_collision_scene.h>
-#include <gdk/impl_dynamic_broadphase_grid.h>
-#include <gdk/impl_narrow_phase.h>
-#include <gdk/impl_sphere_collider.h>
-#include <gdk/overlap.h>
+#include <gdk/collisions/types.h>
+#include <gdk/collisions/impl_axis_aligned_box.h>
+#include <gdk/collisions/impl_broadphase_grid.h>
+#include <gdk/collisions/impl_capsule_collider.h>
+#include <gdk/collisions/impl_compound_collider.h>
+#include <gdk/collisions/impl_heightfield_collider.h>
+#include <gdk/collisions/impl_mesh_collider.h>
+#include <gdk/collisions/impl_plane_collider.h>
+#include <gdk/collisions/impl_obb_collider.h>
+#include <gdk/collisions/impl_collision_event_tracker.h>
+#include <gdk/collisions/impl_collision_profile.h>
+#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/impl_narrow_phase.h>
+#include <gdk/collisions/impl_sphere_collider.h>
+#include <gdk/collisions/overlap.h>
 
 #include <algorithm>
 #include <limits>
@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
     /// \brief lock every weak_ptr in aContainer, dropping those that have expired.
@@ -60,7 +60,7 @@ namespace {
 
     /// \brief narrow phase, dispatched by visiting both colliders' shapes.
     [[nodiscard]] inline std::optional<overlap> overlap_between(const impl_collider_ptr_type &aSubject,
-        const impl_collider_ptr_type &aOther, const collision_delta_time_type aDeltaTime,
+        const impl_collider_ptr_type &aOther, const delta_time_type aDeltaTime,
         const impl_collision_policy &aPolicy) {
         return narrow_phase_overlap_parts(
             aSubject->parts(), aSubject->sweep_kinematics(),
@@ -69,7 +69,7 @@ namespace {
     }
 
     /// \brief push two overlapping colliders apart, returning the contact normal.
-    [[nodiscard]] inline std::optional<collision_vector3_type> resolve_overlap(const impl_collider_ptr_type &aSubject,
+    [[nodiscard]] inline std::optional<vector3_type> resolve_overlap(const impl_collider_ptr_type &aSubject,
         const impl_collider_ptr_type &aOther, const overlap &aOverlap) {
         const auto normal = aOverlap.contact_normal;
         if (normal.is_effectively_zero()) return std::nullopt;
@@ -78,7 +78,7 @@ namespace {
         const auto otherShare = aOther->displacement_share();
         const auto totalShare = subjectShare + otherShare;
 
-        if (totalShare > std::numeric_limits<collision_floating_point_type>::epsilon() &&
+        if (totalShare > std::numeric_limits<floating_point_type>::epsilon() &&
             aOverlap.penetration > 0.0f) {
             const auto translation = normal * aOverlap.penetration;
 
@@ -177,12 +177,12 @@ namespace {
     /// \brief one dynamic body's state across the advancement iterations of a single step.
     struct body_advancement final {
         /// \brief the part of the step this body has still to travel
-        collision_delta_time_type remaining_time = 0;
+        delta_time_type remaining_time = 0;
 
         /// \brief false once this body can do nothing further this step
         bool active = false;
 
-        collision_floating_point_type earliest_blocking_toi = 0;
+        floating_point_type earliest_blocking_toi = 0;
         std::optional<overlap> blocking_hit;
         impl_collider_ptr_type blocking_collider;
 
@@ -193,7 +193,7 @@ namespace {
         std::vector<std::pair<overlap, impl_collider_ptr_type>> resting_contacts;
 
         /// \brief the surfaces this body has been redirected along so far during the step.
-        collision_clip_planes_type clip_planes;
+        clip_planes_type clip_planes;
 
         /// \brief drop the handles, keeping the vectors' capacity for the next step.
         void release() {
@@ -207,11 +207,11 @@ namespace {
 
     /// \brief the concrete scene. Defined here rather than in the header so that none of this
     /// implementation's state is visible to consumers, who see only impl_collision_scene::make.
-    class collision_scene_implementation final : public impl_collision_scene {
+    class scene_implementation final : public impl_collision_scene {
     public:
-        collision_scene_implementation(collision_observer_type aCollisionObserver,
+        scene_implementation(observer_type aCollisionObserver,
             trigger_overlap_observer_type aTriggerOverlapObserver, impl_collision_policy aPolicy,
-            collision_task_dispatcher_type aDispatcher)
+            task_dispatcher_type aDispatcher)
         : m_Events(std::move(aCollisionObserver), std::move(aTriggerOverlapObserver))
         , m_Dispatcher(std::move(aDispatcher))
         , m_DynamicGrid(aPolicy)
@@ -219,51 +219,51 @@ namespace {
         , m_Policy(aPolicy)
         {}
 
-        virtual ~collision_scene_implementation() override = default;
+        virtual ~scene_implementation() override = default;
 
-        virtual void do_update(const collision_delta_time_type aDeltaTime) override;
+        virtual void do_update(const delta_time_type aDeltaTime) override;
         virtual void do_process_events() override;
 
-        [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const collision_vector3_type &aOrigin,
-            const collision_vector3_type &aDirection,
-            const collision_floating_point_type aMaxDistance) const override;
+        [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
+            const vector3_type &aDirection,
+            const floating_point_type aMaxDistance) const override;
 
         [[nodiscard]] virtual std::vector<contact> do_contacts() const override;
         [[nodiscard]] virtual std::vector<contact> do_contacts_for(const collider &aCollider) const override;
 
-        virtual box_collider_ptr_type do_make_axis_aligned_box_collider(const collision_response_handler &) override;
+        virtual box_collider_ptr_type do_make_axis_aligned_box_collider(const response_handler &) override;
         virtual box_collider_ptr_type do_make_axis_aligned_box_trigger() override;
-        virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_collider(const collision_matrix4x4_type &, const collision_vector3_type &) override;
-        virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_trigger(const collision_matrix4x4_type &, const collision_vector3_type &) override;
+        virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_collider(const matrix4x4_type &, const vector3_type &) override;
+        virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_trigger(const matrix4x4_type &, const vector3_type &) override;
 
-        virtual const_plane_collider_ptr_type do_make_static_plane_collider(const collision_matrix4x4_type &) override;
+        virtual const_plane_collider_ptr_type do_make_static_plane_collider(const matrix4x4_type &) override;
 
-        virtual mesh_collider_ptr_type do_make_mesh_collider(const collision_response_handler &) override;
+        virtual mesh_collider_ptr_type do_make_mesh_collider(const response_handler &) override;
         virtual mesh_collider_ptr_type do_make_mesh_trigger() override;
-        virtual const_mesh_collider_ptr_type do_make_static_mesh_collider(const collision_matrix4x4_type &, const mesh_data_ptr_type &) override;
-        virtual const_mesh_collider_ptr_type do_make_static_mesh_trigger(const collision_matrix4x4_type &, const mesh_data_ptr_type &) override;
+        virtual const_mesh_collider_ptr_type do_make_static_mesh_collider(const matrix4x4_type &, const mesh_data_ptr_type &) override;
+        virtual const_mesh_collider_ptr_type do_make_static_mesh_trigger(const matrix4x4_type &, const mesh_data_ptr_type &) override;
 
-        virtual heightfield_collider_ptr_type do_make_heightfield_collider(const collision_response_handler &) override;
-        virtual const_heightfield_collider_ptr_type do_make_static_heightfield_collider(const collision_matrix4x4_type &, const heightfield_data_ptr_type &) override;
+        virtual heightfield_collider_ptr_type do_make_heightfield_collider(const response_handler &) override;
+        virtual const_heightfield_collider_ptr_type do_make_static_heightfield_collider(const matrix4x4_type &, const heightfield_data_ptr_type &) override;
 
-        virtual compound_collider_ptr_type do_make_compound_collider(const collision_response_handler &) override;
-        virtual const_compound_collider_ptr_type do_make_static_compound_collider(const collision_matrix4x4_type &,
+        virtual compound_collider_ptr_type do_make_compound_collider(const response_handler &) override;
+        virtual const_compound_collider_ptr_type do_make_static_compound_collider(const matrix4x4_type &,
             const std::function<void(compound_collider &)> &) override;
 
-        virtual obb_collider_ptr_type do_make_obb_collider(const collision_response_handler &) override;
-        virtual const_obb_collider_ptr_type do_make_static_obb_collider(const collision_matrix4x4_type &, const collision_vector3_type &) override;
+        virtual obb_collider_ptr_type do_make_obb_collider(const response_handler &) override;
+        virtual const_obb_collider_ptr_type do_make_static_obb_collider(const matrix4x4_type &, const vector3_type &) override;
 
-        virtual capsule_collider_ptr_type do_make_capsule_collider(const collision_response_handler &) override;
-        virtual const_capsule_collider_ptr_type do_make_static_capsule_collider(const collision_matrix4x4_type &, const collision_floating_point_type,
-            const collision_floating_point_type) override;
+        virtual capsule_collider_ptr_type do_make_capsule_collider(const response_handler &) override;
+        virtual const_capsule_collider_ptr_type do_make_static_capsule_collider(const matrix4x4_type &, const floating_point_type,
+            const floating_point_type) override;
 
-        virtual sphere_collider_ptr_type do_make_sphere_collider(const collision_response_handler &) override;
+        virtual sphere_collider_ptr_type do_make_sphere_collider(const response_handler &) override;
         virtual sphere_collider_ptr_type do_make_sphere_trigger() override;
-        virtual const_sphere_collider_ptr_type do_make_static_sphere_collider(const collision_matrix4x4_type &, const collision_floating_point_type) override;
-        virtual const_sphere_collider_ptr_type do_make_static_sphere_trigger(const collision_matrix4x4_type &, const collision_floating_point_type) override;
+        virtual const_sphere_collider_ptr_type do_make_static_sphere_collider(const matrix4x4_type &, const floating_point_type) override;
+        virtual const_sphere_collider_ptr_type do_make_static_sphere_trigger(const matrix4x4_type &, const floating_point_type) override;
 
     protected:
-        void update_step(const collision_delta_time_type aDeltaTime);
+        void update_step(const delta_time_type aDeltaTime);
 
         /// \brief ids are handed out per scene rather than from a global counter, so that two
         /// scenes in the same process cannot perturb each other's ordering.
@@ -296,7 +296,7 @@ namespace {
 
         std::vector<std::pair<std::uint64_t, std::uint32_t>> m_DetectOrder;
 
-        collision_task_dispatcher_type m_Dispatcher;
+        task_dispatcher_type m_Dispatcher;
 
         resolved_pair_set m_ResolvedPairs;
 
@@ -312,24 +312,24 @@ namespace {
     };
 }
 
-collision_scene_ptr_type impl_collision_scene::make(collision_observer_type aCollisionObserver,
+scene_ptr_type impl_collision_scene::make(observer_type aCollisionObserver,
     trigger_overlap_observer_type aTriggerObserver, impl_collision_policy aPolicy,
-    collision_task_dispatcher_type aDispatcher) {
-    return collision_scene_ptr_type(new collision_scene_implementation(std::move(aCollisionObserver),
+    task_dispatcher_type aDispatcher) {
+    return scene_ptr_type(new scene_implementation(std::move(aCollisionObserver),
         std::move(aTriggerObserver), aPolicy, std::move(aDispatcher)));
 }
 
-box_collider_ptr_type collision_scene_implementation::do_make_axis_aligned_box_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+box_collider_ptr_type scene_implementation::do_make_axis_aligned_box_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pAABox = std::make_shared<impl_axis_aligned_box_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pAABox);
     return pAABox;
 }
 
-const_box_collider_ptr_type collision_scene_implementation::do_make_static_axis_aligned_box_collider(
-    const collision_matrix4x4_type &aTransform, const collision_vector3_type &aHalfExtents) {
+const_box_collider_ptr_type scene_implementation::do_make_static_axis_aligned_box_collider(
+    const matrix4x4_type &aTransform, const vector3_type &aHalfExtents) {
     auto pStaticAABox = std::make_shared<impl_axis_aligned_box_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pStaticAABox->set_transform(aTransform);
     pStaticAABox->set_half_extents(aHalfExtents);
     m_StaticColliders.push_back(pStaticAABox);
@@ -337,17 +337,17 @@ const_box_collider_ptr_type collision_scene_implementation::do_make_static_axis_
     return pStaticAABox;
 }
 
-box_collider_ptr_type collision_scene_implementation::do_make_axis_aligned_box_trigger() {
+box_collider_ptr_type scene_implementation::do_make_axis_aligned_box_trigger() {
     auto pAABox = std::make_shared<impl_axis_aligned_box_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     m_DynamicTriggers.push_back(pAABox);
     return pAABox;
 }
 
-const_box_collider_ptr_type collision_scene_implementation::do_make_static_axis_aligned_box_trigger(
-    const collision_matrix4x4_type &aTransform, const collision_vector3_type &aHalfExtents) {
+const_box_collider_ptr_type scene_implementation::do_make_static_axis_aligned_box_trigger(
+    const matrix4x4_type &aTransform, const vector3_type &aHalfExtents) {
     auto pStaticAABox = std::make_shared<impl_axis_aligned_box_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pStaticAABox->set_transform(aTransform);
     pStaticAABox->set_half_extents(aHalfExtents);
     m_StaticTriggers.push_back(pStaticAABox);
@@ -355,34 +355,34 @@ const_box_collider_ptr_type collision_scene_implementation::do_make_static_axis_
     return pStaticAABox;
 }
 
-const_plane_collider_ptr_type collision_scene_implementation::do_make_static_plane_collider(
-    const collision_matrix4x4_type &aTransform) {
+const_plane_collider_ptr_type scene_implementation::do_make_static_plane_collider(
+    const matrix4x4_type &aTransform) {
     auto pPlane = std::make_shared<impl_plane_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pPlane->set_transform(aTransform);
     m_StaticColliders.push_back(pPlane);
     register_static(pPlane, impl_broadphase_grid::body_kind::collider);
     return pPlane;
 }
 
-mesh_collider_ptr_type collision_scene_implementation::do_make_mesh_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+mesh_collider_ptr_type scene_implementation::do_make_mesh_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pMesh = std::make_shared<impl_mesh_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pMesh);
     return pMesh;
 }
 
-mesh_collider_ptr_type collision_scene_implementation::do_make_mesh_trigger() {
+mesh_collider_ptr_type scene_implementation::do_make_mesh_trigger() {
     auto pMesh = std::make_shared<impl_mesh_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     m_DynamicTriggers.push_back(pMesh);
     return pMesh;
 }
 
-const_mesh_collider_ptr_type collision_scene_implementation::do_make_static_mesh_collider(
-    const collision_matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
+const_mesh_collider_ptr_type scene_implementation::do_make_static_mesh_collider(
+    const matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
     auto pMesh = std::make_shared<impl_mesh_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pMesh->set_transform(aTransform);
     pMesh->set_mesh(aMesh);
     m_StaticColliders.push_back(pMesh);
@@ -390,10 +390,10 @@ const_mesh_collider_ptr_type collision_scene_implementation::do_make_static_mesh
     return pMesh;
 }
 
-const_mesh_collider_ptr_type collision_scene_implementation::do_make_static_mesh_trigger(
-    const collision_matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
+const_mesh_collider_ptr_type scene_implementation::do_make_static_mesh_trigger(
+    const matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
     auto pMesh = std::make_shared<impl_mesh_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pMesh->set_transform(aTransform);
     pMesh->set_mesh(aMesh);
     m_StaticTriggers.push_back(pMesh);
@@ -401,18 +401,18 @@ const_mesh_collider_ptr_type collision_scene_implementation::do_make_static_mesh
     return pMesh;
 }
 
-heightfield_collider_ptr_type collision_scene_implementation::do_make_heightfield_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+heightfield_collider_ptr_type scene_implementation::do_make_heightfield_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pTerrain = std::make_shared<impl_heightfield_collider>(m_Policy, aCollisionResponseHandler, 1,
         next_collider_id());
     m_DynamicColliders.push_back(pTerrain);
     return pTerrain;
 }
 
-const_heightfield_collider_ptr_type collision_scene_implementation::do_make_static_heightfield_collider(
-    const collision_matrix4x4_type &aTransform, const heightfield_data_ptr_type &aHeightfield) {
+const_heightfield_collider_ptr_type scene_implementation::do_make_static_heightfield_collider(
+    const matrix4x4_type &aTransform, const heightfield_data_ptr_type &aHeightfield) {
     auto pTerrain = std::make_shared<impl_heightfield_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pTerrain->set_transform(aTransform);
     pTerrain->set_heightfield(aHeightfield);
     m_StaticColliders.push_back(pTerrain);
@@ -420,17 +420,17 @@ const_heightfield_collider_ptr_type collision_scene_implementation::do_make_stat
     return pTerrain;
 }
 
-compound_collider_ptr_type collision_scene_implementation::do_make_compound_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+compound_collider_ptr_type scene_implementation::do_make_compound_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pCompound = std::make_shared<impl_compound_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pCompound);
     return pCompound;
 }
 
-const_compound_collider_ptr_type collision_scene_implementation::do_make_static_compound_collider(
-    const collision_matrix4x4_type &aTransform, const std::function<void(compound_collider &)> &aBuild) {
+const_compound_collider_ptr_type scene_implementation::do_make_static_compound_collider(
+    const matrix4x4_type &aTransform, const std::function<void(compound_collider &)> &aBuild) {
     auto pCompound = std::make_shared<impl_compound_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pCompound->set_transform(aTransform);
 
     if (aBuild) aBuild(*pCompound);
@@ -439,17 +439,17 @@ const_compound_collider_ptr_type collision_scene_implementation::do_make_static_
     return pCompound;
 }
 
-obb_collider_ptr_type collision_scene_implementation::do_make_obb_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+obb_collider_ptr_type scene_implementation::do_make_obb_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pBox = std::make_shared<impl_obb_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pBox);
     return pBox;
 }
 
-const_obb_collider_ptr_type collision_scene_implementation::do_make_static_obb_collider(
-    const collision_matrix4x4_type &aTransform, const collision_vector3_type &aHalfExtents) {
+const_obb_collider_ptr_type scene_implementation::do_make_static_obb_collider(
+    const matrix4x4_type &aTransform, const vector3_type &aHalfExtents) {
     auto pBox = std::make_shared<impl_obb_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pBox->set_transform(aTransform);
     pBox->set_half_extents(aHalfExtents);
     m_StaticColliders.push_back(pBox);
@@ -457,18 +457,18 @@ const_obb_collider_ptr_type collision_scene_implementation::do_make_static_obb_c
     return pBox;
 }
 
-capsule_collider_ptr_type collision_scene_implementation::do_make_capsule_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+capsule_collider_ptr_type scene_implementation::do_make_capsule_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pCapsule = std::make_shared<impl_capsule_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pCapsule);
     return pCapsule;
 }
 
-const_capsule_collider_ptr_type collision_scene_implementation::do_make_static_capsule_collider(
-    const collision_matrix4x4_type &aTransform, const collision_floating_point_type aRadius,
-    const collision_floating_point_type aHalfHeight) {
+const_capsule_collider_ptr_type scene_implementation::do_make_static_capsule_collider(
+    const matrix4x4_type &aTransform, const floating_point_type aRadius,
+    const floating_point_type aHalfHeight) {
     auto pCapsule = std::make_shared<impl_capsule_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pCapsule->set_transform(aTransform);
     pCapsule->set_radius(aRadius);
     pCapsule->set_half_height(aHalfHeight);
@@ -477,17 +477,17 @@ const_capsule_collider_ptr_type collision_scene_implementation::do_make_static_c
     return pCapsule;
 }
 
-sphere_collider_ptr_type collision_scene_implementation::do_make_sphere_collider(
-    const collision_response_handler &aCollisionResponseHandler) {
+sphere_collider_ptr_type scene_implementation::do_make_sphere_collider(
+    const response_handler &aCollisionResponseHandler) {
     auto pSphere = std::make_shared<impl_sphere_collider>(m_Policy, aCollisionResponseHandler, 1, next_collider_id());
     m_DynamicColliders.push_back(pSphere);
     return pSphere;
 }
 
-const_sphere_collider_ptr_type collision_scene_implementation::do_make_static_sphere_collider(
-    const collision_matrix4x4_type &aTransform, const collision_floating_point_type aRadius) {
+const_sphere_collider_ptr_type scene_implementation::do_make_static_sphere_collider(
+    const matrix4x4_type &aTransform, const floating_point_type aRadius) {
     auto pStaticSphere = std::make_shared<impl_sphere_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pStaticSphere->set_transform(aTransform);
     pStaticSphere->set_radius(aRadius);
     m_StaticColliders.push_back(pStaticSphere);
@@ -495,17 +495,17 @@ const_sphere_collider_ptr_type collision_scene_implementation::do_make_static_sp
     return pStaticSphere;
 }
 
-sphere_collider_ptr_type collision_scene_implementation::do_make_sphere_trigger() {
+sphere_collider_ptr_type scene_implementation::do_make_sphere_trigger() {
     auto pSphere = std::make_shared<impl_sphere_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     m_DynamicTriggers.push_back(pSphere);
     return pSphere;
 }
 
-const_sphere_collider_ptr_type collision_scene_implementation::do_make_static_sphere_trigger(
-    const collision_matrix4x4_type &aTransform, const collision_floating_point_type aRadius) {
+const_sphere_collider_ptr_type scene_implementation::do_make_static_sphere_trigger(
+    const matrix4x4_type &aTransform, const floating_point_type aRadius) {
     auto pStaticSphere = std::make_shared<impl_sphere_collider>(m_Policy,
-        collision_response_handlers::null_opt, 0, next_collider_id());
+        response_handlers::null_opt, 0, next_collider_id());
     pStaticSphere->set_transform(aTransform);
     pStaticSphere->set_radius(aRadius);
     m_StaticTriggers.push_back(pStaticSphere);
@@ -513,12 +513,12 @@ const_sphere_collider_ptr_type collision_scene_implementation::do_make_static_sp
     return pStaticSphere;
 }
 
-void collision_scene_implementation::update_step(const collision_delta_time_type aDeltaTime) {
+void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     using body_kind = impl_broadphase_grid::body_kind;
     using body_ref = impl_broadphase_grid::neighbour;
 
     const auto gather = [&](detect_scratch &aScratch, const impl_collider &aSubject,
-        const collision_delta_time_type aTime, std::vector<body_ref> &aOut) {
+        const delta_time_type aTime, std::vector<body_ref> &aOut) {
         GDK_COLLISION_PROFILE_BEGIN(gather_query_ms);
         auto &seen = aScratch.seen;
         seen.clear();
@@ -688,7 +688,7 @@ void collision_scene_implementation::update_step(const collision_delta_time_type
 
         const auto resolve_once = [&](const impl_collider_ptr_type &aSubject,
             const impl_collider_ptr_type &aOther,
-            const overlap &aOverlap) -> std::optional<collision_vector3_type> {
+            const overlap &aOverlap) -> std::optional<vector3_type> {
             if (m_ResolvedPairs.insert(aSubject->id(), aOther->id()))
                 return resolve_overlap(aSubject, aOther, aOverlap);
 
@@ -720,7 +720,7 @@ void collision_scene_implementation::update_step(const collision_delta_time_type
             }
 
             if (state.blocking_hit) {
-                auto velocityChange = collision_vector3_type::zero;
+                auto velocityChange = vector3_type::zero;
 
                 const auto oCollisionNormal = resolve_once(pDynamicCollider, state.blocking_collider,
                     *state.blocking_hit);
@@ -859,21 +859,21 @@ namespace {
     }
 }
 
-std::vector<contact> collision_scene_implementation::do_contacts() const {
+std::vector<contact> scene_implementation::do_contacts() const {
     return collect_contacts(m_Events, nullptr);
 }
 
-std::vector<contact> collision_scene_implementation::do_contacts_for(const collider &aCollider) const {
+std::vector<contact> scene_implementation::do_contacts_for(const collider &aCollider) const {
     return collect_contacts(m_Events, &aCollider);
 }
 
-std::optional<raycast_hit> collision_scene_implementation::do_raycast(const collision_vector3_type &aOrigin,
-    const collision_vector3_type &aDirection, const collision_floating_point_type aMaxDistance) const {
+std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &aOrigin,
+    const vector3_type &aDirection, const floating_point_type aMaxDistance) const {
     const auto direction = aDirection.normal();
     if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
 
     static const std::vector<collider_part> ray{collider_part{sphere_shape{0.0f}}};
-    const shape_kinematics rayKinematics{aOrigin, direction, collision_quaternion_type::identity};
+    const shape_kinematics rayKinematics{aOrigin, direction, quaternion_type::identity};
 
     std::optional<raycast_hit> nearest;
 
@@ -900,8 +900,8 @@ std::optional<raycast_hit> collision_scene_implementation::do_raycast(const coll
 
     impl_collider::broadphase_bounds rayBounds;
     const auto tip = aOrigin + direction * aMaxDistance;
-    rayBounds.min = collision_vector3_type::min(aOrigin, tip);
-    rayBounds.max = collision_vector3_type::max(aOrigin, tip);
+    rayBounds.min = vector3_type::min(aOrigin, tip);
+    rayBounds.max = vector3_type::max(aOrigin, tip);
 
     collider_id_set seen;
     std::vector<impl_broadphase_grid::neighbour> candidates;
@@ -916,11 +916,11 @@ std::optional<raycast_hit> collision_scene_implementation::do_raycast(const coll
     return nearest;
 }
 
-void collision_scene_implementation::do_process_events() {
+void scene_implementation::do_process_events() {
     m_Events.dispatch();
 }
 
-void collision_scene_implementation::do_update(const collision_delta_time_type aDeltaTime) {
+void scene_implementation::do_update(const delta_time_type aDeltaTime) {
     GDK_COLLISION_PROFILE_BEGIN(total_ms);
 
     const auto subDeltaTime = aDeltaTime / m_Policy.STEPS_PER_UPDATE;

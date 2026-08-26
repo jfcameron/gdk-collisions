@@ -1,6 +1,6 @@
 // © Joseph Cameron - All Rights Reserved
 
-#include <gdk/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/impl_dynamic_broadphase_grid.h>
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,7 @@
 #include <limits>
 #include <utility>
 
-using namespace gdk;
+using namespace gdk::collisions;
 
 namespace {
     [[nodiscard]] std::size_t next_power_of_two(const std::size_t aValue) {
@@ -163,7 +163,7 @@ void impl_dynamic_broadphase_grid::count_cells(const std::size_t aChunkIndex) {
     }
 }
 
-void impl_dynamic_broadphase_grid::build(const collision_task_dispatcher_type &aDispatcher) {
+void impl_dynamic_broadphase_grid::build(const task_dispatcher_type &aDispatcher) {
     m_Entries.clear();
 
     const std::size_t chunkCount = aDispatcher ? 8 : 1;
@@ -222,7 +222,7 @@ void impl_dynamic_broadphase_grid::scatter(const std::size_t aChunkIndex) {
 }
 
 void impl_dynamic_broadphase_grid::gather_neighbours(const impl_collider &aCollider,
-    const collision_delta_time_type aDeltaTime, collider_id_set &aSeen,
+    const delta_time_type aDeltaTime, collider_id_set &aSeen,
     std::vector<neighbour> &aOutNeighbours) const {
     gather_overlapping_excluding(aCollider.broad_phase_swept_bounds(aDeltaTime), &aCollider,
         aSeen, aOutNeighbours);
