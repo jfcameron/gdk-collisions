@@ -8,6 +8,7 @@
 #include <gdk/collisions/types.h>
 #include <gdk/collisions/contact.h>
 #include <gdk/collisions/raycast_hit.h>
+#include <gdk/collisions/rigid_transform.h>
 
 #include <functional>
 #include <memory>
@@ -59,6 +60,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_collider(
             const matrix4x4_type &aTransform,
             const vector3_type &aHalfExtents) {
+            require_rigid_transform(aTransform, "make_static_axis_aligned_box_collider");
+
             return do_make_static_axis_aligned_box_collider(aTransform, aHalfExtents);
         }
 
@@ -67,6 +70,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_trigger(
             const matrix4x4_type &aTransform,
             const vector3_type &aHalfExtents) {
+            require_rigid_transform(aTransform, "make_static_axis_aligned_box_trigger");
+
             return do_make_static_axis_aligned_box_trigger(aTransform, aHalfExtents);
         }
 
@@ -84,6 +89,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_sphere_collider_ptr_type make_static_sphere_collider(
             const matrix4x4_type &aTransform,
             const floating_point_type aRadius) {
+            require_rigid_transform(aTransform, "make_static_sphere_collider");
+
             return do_make_static_sphere_collider(aTransform, aRadius);
         }
 
@@ -92,6 +99,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_sphere_collider_ptr_type make_static_sphere_trigger(
             const matrix4x4_type &aTransform,
             const floating_point_type aRadius) {
+            require_rigid_transform(aTransform, "make_static_sphere_trigger");
+
             return do_make_static_sphere_trigger(aTransform, aRadius);
         }
 
@@ -108,6 +117,8 @@ namespace gdk::collisions {
             const matrix4x4_type &aTransform,
             const floating_point_type aRadius,
             const floating_point_type aHalfHeight) {
+            require_rigid_transform(aTransform, "make_static_capsule_collider");
+
             return do_make_static_capsule_collider(aTransform, aRadius, aHalfHeight);
         }
 
@@ -122,6 +133,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_obb_collider_ptr_type make_static_obb_collider(
             const matrix4x4_type &aTransform,
             const vector3_type &aHalfExtents) {
+            require_rigid_transform(aTransform, "make_static_obb_collider");
+
             return do_make_static_obb_collider(aTransform, aHalfExtents);
         }
 
@@ -143,6 +156,8 @@ namespace gdk::collisions {
         [[nodiscard]] const_compound_collider_ptr_type make_static_compound_collider(
             const matrix4x4_type &aTransform,
             const std::function<void(compound_collider &)> &aBuild) {
+            require_rigid_transform(aTransform, "make_static_compound_collider");
+
             return do_make_static_compound_collider(aTransform, aBuild);
         }
 
@@ -155,20 +170,21 @@ namespace gdk::collisions {
         }
 
         /// \brief create a trigger volume whose geometry is a shared triangle mesh.
-        ///
-        /// Movable and rotatable, like any other trigger: a mesh trigger is the cheap way to ask
-        /// "is anything inside this awkwardly shaped region", which a box cannot express.
         [[nodiscard]] mesh_collider_ptr_type make_mesh_trigger() { return do_make_mesh_trigger(); }
 
         /// \brief create an immovable collider whose geometry is a shared triangle mesh.
         [[nodiscard]] const_mesh_collider_ptr_type make_static_mesh_collider(
             const matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
+            require_rigid_transform(aTransform, "make_static_mesh_collider");
+
             return do_make_static_mesh_collider(aTransform, aMesh);
         }
 
         /// \brief create an immovable trigger volume whose geometry is a shared triangle mesh
         [[nodiscard]] const_mesh_collider_ptr_type make_static_mesh_trigger(
             const matrix4x4_type &aTransform, const mesh_data_ptr_type &aMesh) {
+            require_rigid_transform(aTransform, "make_static_mesh_trigger");
+
             return do_make_static_mesh_trigger(aTransform, aMesh);
         }
 
@@ -181,12 +197,16 @@ namespace gdk::collisions {
         /// \brief create immovable terrain
         [[nodiscard]] const_heightfield_collider_ptr_type make_static_heightfield_collider(
             const matrix4x4_type &aTransform, const heightfield_data_ptr_type &aHeightfield) {
+            require_rigid_transform(aTransform, "make_static_heightfield_collider");
+
             return do_make_static_heightfield_collider(aTransform, aHeightfield);
         }
 
         /// \brief create an immovable infinite plane. The normal of the plane is parallel to local +Y
         [[nodiscard]] const_plane_collider_ptr_type make_static_plane_collider(
             const matrix4x4_type &aTransform) {
+            require_rigid_transform(aTransform, "make_static_plane_collider");
+
             return do_make_static_plane_collider(aTransform);
         }
 

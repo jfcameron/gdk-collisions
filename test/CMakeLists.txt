@@ -8,6 +8,7 @@ jfc_add_tests(
         "${CMAKE_CURRENT_LIST_DIR}/broadphase_grid_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/collision_overlap_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/collision_parallel_test.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/rigid_transform_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/collision_scene_test.cpp"
 
     INCLUDE_DIRECTORIES
@@ -22,3 +23,4 @@ jfc_add_tests(
 target_compile_options(${PROJECT_NAME} PRIVATE ${JFC_COLLISION_FP_FLAGS})
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
+
