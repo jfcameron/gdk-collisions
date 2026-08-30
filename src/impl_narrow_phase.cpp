@@ -58,8 +58,7 @@ namespace {
             [&](const mesh_shape &) { return segment{position, position}; },
             [&](const heightfield_shape &) { return segment{position, position}; },
             [&](const capsule_shape &aCapsule) {
-                const auto offset = rotate(aKinematics.orientation,
-                    vector3_type{0, aCapsule.half_height, 0});
+                const auto offset = aKinematics.orientation * vector3_type{0, aCapsule.half_height, 0};
                 return segment{position - offset, position + offset};
             },
         }, aShape);
@@ -85,7 +84,6 @@ namespace {
         floating_point_type t = 0;
 
         if (a <= epsilon && e <= epsilon) {
-            // both degenerate: point vs point
         }
         else if (a <= epsilon) {
             t = clamp01(f / e);
@@ -119,9 +117,9 @@ namespace {
     [[nodiscard]] triangle_points world_triangle(const triangle_shape &aTriangle,
         const shape_kinematics &aKinematics) {
         return triangle_points{
-            aKinematics.position + rotate(aKinematics.orientation, aTriangle.a),
-            aKinematics.position + rotate(aKinematics.orientation, aTriangle.b),
-            aKinematics.position + rotate(aKinematics.orientation, aTriangle.c)};
+            aKinematics.position + aKinematics.orientation * aTriangle.a,
+            aKinematics.position + aKinematics.orientation * aTriangle.b,
+            aKinematics.position + aKinematics.orientation * aTriangle.c};
     }
 
     /// \brief closest point on a triangle to a point 
@@ -150,7 +148,7 @@ namespace {
         const auto d21 = ap.dot_product(ac);
 
         const auto denominator = d00 * d11 - d01 * d01;
-        if (std::abs(denominator) <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;   // degenerate
+        if (std::abs(denominator) <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;   
 
         const auto v = (d11 * d20 - d01 * d21) / denominator;
         const auto w = (d00 * d21 - d01 * d20) / denominator;
@@ -283,7 +281,7 @@ namespace {
 
         const auto add_crossing = [&](const floating_point_type aStart,
             const floating_point_type aDelta, const floating_point_type aPlane) {
-            if (aDelta == 0) return;                      // parallel to this slab: never crosses it
+            if (aDelta == 0) return;                      
             const auto t = (aPlane - aStart) / aDelta;
             if (t > 0 && t < 1) candidates[candidateCount++] = t;
         };
@@ -313,8 +311,6 @@ namespace {
             const auto high = candidates[i + 1];
             if (high <= low) continue;
 
-            // The clamp pattern is constant across the interval, so reading it at the midpoint reads
-            // it for the whole interval.
             const auto middle = point_at((low + high) * 0.5f);
 
             auto quadraticA = floating_point_type{0};
@@ -357,16 +353,16 @@ namespace {
         if (std::holds_alternative<obb_shape>(aOtherShape)) {
             const auto inverse = aOther.orientation.inverse_unit();
             const segment localSegment{
-                rotate(inverse, subjectSegment.a - aOther.position),
-                rotate(inverse, subjectSegment.b - aOther.position)};
+                inverse * (subjectSegment.a - aOther.position),
+                inverse * (subjectSegment.b - aOther.position)};
 
             const auto &extents = std::get<obb_shape>(aOtherShape).half_extents;
             const bounds localBox{extents * -1.0f, extents};
 
             const auto local = closest_points_segment_box(localSegment, localBox, aPolicy);
             const closest_points world{
-                rotate(aOther.orientation, local.on_first) + aOther.position,
-                rotate(aOther.orientation, local.on_second) + aOther.position,
+                aOther.orientation * local.on_first + aOther.position,
+                aOther.orientation * local.on_second + aOther.position,
                 local.inside};
 
             const auto distance = (world.on_first - world.on_second).length();
@@ -476,9 +472,9 @@ namespace {
         box_frame frame;
         frame.centre = aCentre;
         frame.half_extents = aHalfExtents;
-        frame.axis[0] = rotate(aOrientation, vector3_type{1, 0, 0});
-        frame.axis[1] = rotate(aOrientation, vector3_type{0, 1, 0});
-        frame.axis[2] = rotate(aOrientation, vector3_type{0, 0, 1});
+        frame.axis[0] = aOrientation * vector3_type{1, 0, 0};
+        frame.axis[1] = aOrientation * vector3_type{0, 1, 0};
+        frame.axis[2] = aOrientation * vector3_type{0, 0, 1};
         return frame;
     }
 
@@ -661,7 +657,7 @@ namespace {
 
     [[nodiscard]] plane_frame plane_of(const shape_kinematics &aKinematics) {
         return plane_frame{aKinematics.position,
-            rotate(aKinematics.orientation, vector3_type{0, 1, 0})};
+            aKinematics.orientation * vector3_type{0, 1, 0}};
     }
 
     [[nodiscard]] floating_point_type gap_to_plane(const shape_type &aShape,
@@ -681,8 +677,7 @@ namespace {
                     aPlane.normal);
             },
             [&](const capsule_shape &aCapsule) {
-                const auto offset = rotate(aKinematics.orientation,
-                    vector3_type{0, aCapsule.half_height, 0}).dot_product(aPlane.normal);
+                const auto offset = (aKinematics.orientation * vector3_type{0, aCapsule.half_height, 0}).dot_product(aPlane.normal);
                 return centreHeight - std::abs(offset) - aCapsule.radius;
             },
             [&](const triangle_shape &aTriangle) {
@@ -946,10 +941,10 @@ namespace {
         auto high = vector3_type::zero;
 
         for (int corner = 0; corner < 8; ++corner) {
-            const auto rotated = rotate(aOrientation, vector3_type{
+            const auto rotated = aOrientation * vector3_type{
                 (corner & 1) ? aBounds.max.x : aBounds.min.x,
                 (corner & 2) ? aBounds.max.y : aBounds.min.y,
-                (corner & 4) ? aBounds.max.z : aBounds.min.z});
+                (corner & 4) ? aBounds.max.z : aBounds.min.z};
 
             low = corner ? vector3_type::min(low, rotated) : rotated;
             high = corner ? vector3_type::max(high, rotated) : rotated;
@@ -975,9 +970,9 @@ vector3_type gdk::collisions::shape_extents(const shape_type &aShape,
             return vector3_type{unbounded, unbounded, unbounded};
         },
         [&](const triangle_shape &aTriangle) {
-            const auto a = rotate(aOrientation, aTriangle.a);
-            const auto b = rotate(aOrientation, aTriangle.b);
-            const auto c = rotate(aOrientation, aTriangle.c);
+            const auto a = aOrientation * aTriangle.a;
+            const auto b = aOrientation * aTriangle.b;
+            const auto c = aOrientation * aTriangle.c;
             const auto low = vector3_type::min(a, vector3_type::min(b, c));
             const auto high = vector3_type::max(a, vector3_type::max(b, c));
             return vector3_type{
@@ -1008,7 +1003,7 @@ vector3_type gdk::collisions::shape_extents(const shape_type &aShape,
             };
         },
         [&](const capsule_shape &aCapsule) {
-            const auto half = rotate(aOrientation, vector3_type{0, aCapsule.half_height, 0});
+            const auto half = aOrientation * vector3_type{0, aCapsule.half_height, 0};
             return vector3_type{
                 std::abs(half.x) + aCapsule.radius,
                 std::abs(half.y) + aCapsule.radius,
@@ -1067,7 +1062,7 @@ namespace {
 
                 impl_mesh_data::bounds local;
                 for (int corner = 0; corner < 8; ++corner) {
-                    const auto rotated = rotate(toLocal, vector3_type{
+                    const auto rotated = toLocal * (vector3_type{
                         (corner & 1) ? world.max.x : world.min.x,
                         (corner & 2) ? world.max.y : world.min.y,
                         (corner & 4) ? world.max.z : world.min.z} - aMeshKinematics.position);
@@ -1410,7 +1405,7 @@ std::optional<overlap> gdk::collisions::narrow_phase_overlap_parts(
     const delta_time_type aDeltaTime, const impl_collision_policy &aPolicy) {
     const auto world_of = [](const collider_part &aPart, const shape_kinematics &aCollider) {
         shape_kinematics kinematics;
-        kinematics.position = aCollider.position + rotate(aCollider.orientation, aPart.position);
+        kinematics.position = aCollider.position + aCollider.orientation * aPart.position;
         kinematics.velocity = aCollider.velocity;
         kinematics.orientation = aCollider.orientation * aPart.rotation;
         return kinematics;

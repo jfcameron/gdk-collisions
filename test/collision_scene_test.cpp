@@ -405,7 +405,7 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
     fixture f;
 
     const auto z_angle_of = [](const collider &aBody) {
-        const auto turned = rotate(aBody.rotation(), vector3_type{1, 0, 0});
+        const auto turned = aBody.rotation() * vector3_type{1, 0, 0};
         return std::atan2(turned.y, turned.x);
     };
 
@@ -456,7 +456,7 @@ TEST_CASE("gdk::collider add_rotation accumulates identically in both directions
             const auto pBody = accumulate(step, 50);
 
             const vector3_type probe{0.3f, 0.5f, -0.8f};
-            const auto viaQuaternion = rotate(pBody->rotation(), probe);
+            const auto viaQuaternion = pBody->rotation() * probe;
 
             const vector4_type probe4{probe.x, probe.y, probe.z, 1.0f};
             const auto viaMatrix = pBody->transform() * probe4;
@@ -517,7 +517,7 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
 
         const auto up = pBody->rotation();
         const vector3_type localY{0, 1, 0};
-        const auto turned = rotate(up, localY);
+        const auto turned = up * localY;
 
         REQUIRE(turned.y == Approx(-1.0f).margin(1e-4f));
     }
@@ -535,8 +535,8 @@ TEST_CASE("gdk::collider can be oriented after creation", "[gdk::collision]")
         std::dynamic_pointer_cast<impl_collider>(pBody)->set_transform(transform);
 
         const vector3_type probe{0.3f, 0.5f, -0.8f};
-        const auto expected = rotate(turn, probe);
-        const auto actual = rotate(pBody->rotation(), probe);
+        const auto expected = turn * probe;
+        const auto actual = pBody->rotation() * probe;
 
         REQUIRE(actual.x == Approx(expected.x).margin(1e-4f));
         REQUIRE(actual.y == Approx(expected.y).margin(1e-4f));
@@ -801,7 +801,7 @@ TEST_CASE("gdk::scene keeps a rotating capsule out of the surface it is pressed 
 
     const auto lowest_point_of = [&pCapsule] {
         const auto centre = pCapsule->transform().translation();
-        const auto axis = rotate(pCapsule->rotation(), vector3_type{0, 0.5f, 0});
+        const auto axis = pCapsule->rotation() * vector3_type{0, 0.5f, 0};
         return std::min(centre.y + axis.y, centre.y - axis.y) - 0.5f;
     };
 
@@ -841,7 +841,7 @@ TEST_CASE("gdk::scene keeps a rotating capsule out of the surface it is pressed 
 
     REQUIRE(pBox->transform().translation().y == Approx(0.0f).margin(1e-5f));
 
-    const auto finalAxis = rotate(pCapsule->rotation(), vector3_type{0, 0.5f, 0});
+    const auto finalAxis = pCapsule->rotation() * vector3_type{0, 0.5f, 0};
     REQUIRE(std::abs(finalAxis.y) < 0.45f);   
     REQUIRE(lowest_point_of() == Approx(0.5f).margin(1e-2f));
 }

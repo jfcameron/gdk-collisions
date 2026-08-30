@@ -126,7 +126,7 @@ impl_collider::broadphase_bounds impl_collider::broad_phase_bounds() const {
     auto first = true;
 
     for (const auto &part : m_Parts) {
-        const auto centre = origin + rotate(orientation, part.position);
+        const auto centre = origin + orientation * part.position;
         const auto extents = shape_extents(part.shape, orientation * part.rotation);
 
         const auto partLow = centre - extents;

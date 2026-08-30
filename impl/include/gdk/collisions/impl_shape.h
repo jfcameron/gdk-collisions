@@ -62,13 +62,6 @@ namespace gdk::collisions {
         quaternion_type rotation = quaternion_type::identity;
     };
 
-    /// \brief rotate a vector by a unit quaternion.
-    //TODO: is this the correct place for this? look at gdk-math for alternative or possible refactor
-    [[nodiscard]] inline vector3_type rotate(const quaternion_type &aRotation,
-        const vector3_type &aVector) {
-        return aRotation * aVector;
-    }
-
     template <typename... Ts> struct overloaded : Ts... { using Ts::operator()...; };
     template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 }
