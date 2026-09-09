@@ -9,7 +9,7 @@ add_library(gdkcollisions_bench_objects OBJECT ${JFC_COLLISION_BENCH_SOURCES})
 target_include_directories(gdkcollisions_bench_objects PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/../include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../impl/include"
-    ${gdkmath_INCLUDE_DIRECTORIES})
+    )
 
 option(JFC_COLLISION_BENCH_PROFILE "Compile the benchmark's library copy with per-phase timers" ON)
 

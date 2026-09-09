@@ -56,6 +56,8 @@ namespace gdk::collisions {
         }
 
         /// \brief create a new immovable axis aligned box in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aHalfExtents the box's size.
         [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_collider(
             const matrix4x4_type &aTransform,
@@ -66,6 +68,8 @@ namespace gdk::collisions {
         }
 
         /// \brief create a new immovable axis aligned box trigger volume in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aHalfExtents the box's size. 
         [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_trigger(
             const matrix4x4_type &aTransform,
@@ -85,6 +89,8 @@ namespace gdk::collisions {
         [[nodiscard]] sphere_collider_ptr_type make_sphere_trigger() { return do_make_sphere_trigger(); }
 
         /// \brief create a new immovable sphere in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aRadius the sphere's size.
         [[nodiscard]] const_sphere_collider_ptr_type make_static_sphere_collider(
             const matrix4x4_type &aTransform,
@@ -95,6 +101,8 @@ namespace gdk::collisions {
         }
 
         /// \brief create a new immovable sphere trigger volume in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aRadius the sphere's size.
         [[nodiscard]] const_sphere_collider_ptr_type make_static_sphere_trigger(
             const matrix4x4_type &aTransform,
@@ -111,6 +119,8 @@ namespace gdk::collisions {
         }
 
         /// \brief create a new immovable capsule in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aRadius the capsule's radius.
         /// \param aHalfHeight distance from the centre to either end of the segment, along local Y.
         [[nodiscard]] const_capsule_collider_ptr_type make_static_capsule_collider(
@@ -129,6 +139,8 @@ namespace gdk::collisions {
         }
 
         /// \brief create a new immovable oriented box in the scene
+        /// \param aTransform where it sits. Must be rigid (rotation and translation only).
+        ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aHalfExtents the box's size. 
         [[nodiscard]] const_obb_collider_ptr_type make_static_obb_collider(
             const matrix4x4_type &aTransform,

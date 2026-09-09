@@ -2,7 +2,9 @@
 
 cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 
-project(null)
+project(gdkcollisions
+    VERSION 0.1
+    DESCRIPTION "3d collision detection and resolution")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/jfc-cmake/jfclib.cmake")
 
@@ -57,27 +59,7 @@ else()
     endforeach()
 endif()
 
-jfc_project(library
-    NAME "gdkcollisions"
-    VERSION 0.1
-    DESCRIPTION "3d collision detection and resolution"
-    C++_STANDARD 20
-    C_STANDARD 90
-    TYPE STATIC
-
-    PUBLIC_INCLUDE_DIRECTORIES
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/impl/include
-
-        ${gdkmath_INCLUDE_DIRECTORIES}
-
-    LIBRARIES
-        ${gdkmath_LIBRARIES}
-
-    DEPENDENCIES
-        "gdkmath"
-
-    SOURCE_LIST
+add_library(gdkcollisions STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/exception.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/response_handler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/scene.cpp
@@ -96,8 +78,27 @@ jfc_project(library
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_narrow_phase.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_obb_collider.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_plane_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_sphere_collider.cpp
-)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_sphere_collider.cpp)
+
+add_library(gdk::collisions ALIAS gdkcollisions)
+
+set_target_properties(gdkcollisions PROPERTIES EXPORT_NAME collisions)
+
+set_target_properties(gdkcollisions PROPERTIES PREFIX "lib")
+
+jfc_generate_cmake_header()
+
+target_include_directories(gdkcollisions
+    PUBLIC
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/impl/include>"
+        "$<INSTALL_INTERFACE:include>"
+    PRIVATE
+        "${PROJECT_BINARY_DIR}/generated_include/")
+
+target_compile_features(gdkcollisions PUBLIC cxx_std_20)
+
+target_link_libraries(gdkcollisions PUBLIC gdkmath)
 
 target_compile_options(gdkcollisions PRIVATE ${JFC_COLLISION_FP_FLAGS})
 

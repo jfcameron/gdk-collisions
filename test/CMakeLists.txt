@@ -14,11 +14,10 @@ jfc_add_tests(
     INCLUDE_DIRECTORIES
         "${CMAKE_CURRENT_LIST_DIR}/../include"
         "${CMAKE_CURRENT_LIST_DIR}/../impl/include"
-        "${gdkmath_INCLUDE_DIRECTORIES}"
 
     LIBRARIES
-        "${gdkcollisions_LIBRARIES}"
-        "${gdkmath_LIBRARIES}")
+        gdkcollisions
+        gdkmath)
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${JFC_COLLISION_FP_FLAGS})
 
