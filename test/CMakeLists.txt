@@ -2,7 +2,6 @@
 
 jfc_add_tests(
     C++_STANDARD 20
-    C_STANDARD 90
 
     TEST_SOURCE_FILES
         "${CMAKE_CURRENT_LIST_DIR}/broadphase_grid_test.cpp"
@@ -19,7 +18,7 @@ jfc_add_tests(
         gdkcollisions
         gdkmath)
 
-target_compile_options(${PROJECT_NAME} PRIVATE ${JFC_COLLISION_FP_FLAGS})
+target_compile_options(${JFC_TEST_TARGET} PRIVATE ${JFC_COLLISION_FP_FLAGS})
 
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
+set_property(TARGET ${JFC_TEST_TARGET} PROPERTY CXX_EXTENSIONS OFF)
 

@@ -86,7 +86,7 @@ set_target_properties(gdkcollisions PROPERTIES EXPORT_NAME collisions)
 
 set_target_properties(gdkcollisions PROPERTIES PREFIX "lib")
 
-jfc_generate_cmake_header()
+jfc_generate_build_info()
 
 target_include_directories(gdkcollisions
     PUBLIC
