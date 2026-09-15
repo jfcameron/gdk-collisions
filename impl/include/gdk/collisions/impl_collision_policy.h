@@ -54,6 +54,9 @@ namespace gdk::collisions {
         /// \brief how nearly a contact normal must match a face normal to count as a face contact.
         const floating_point_type FACE_CONTACT_COSINE_EPSILON{1e-4f};
 
+        /// \brief how nearly edge on a contact must be for its triangle to be disbelieved
+        const floating_point_type INTERNAL_EDGE_GHOST_COSINE{0.1f};
+
         /// \brief minimum offset applied after collision resolution
         const floating_point_type POST_RESOLUTION_SEPARATION_EPSILON{1e-3f};
     };

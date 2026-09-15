@@ -123,21 +123,30 @@ namespace {
     }
 
     /// \brief closest point on a triangle to a point 
-    [[nodiscard]] std::optional<vector3_type> corrected_internal_edge_normal(
+    /// \brief what to make of a contact that landed on a triangle's internal edge
+    struct internal_edge_verdict final {
+        /// \brief the subject is off this triangle's rim rather than over it
+        bool doubtful = false;
+
+        //! a replacement normal
+        std::optional<vector3_type> normal;
+    };
+
+    [[nodiscard]] internal_edge_verdict corrected_internal_edge_normal(
         const std::uint8_t aInternalEdges, const triangle_points &aTriangle,
         const vector3_type &aContactPoint, const vector3_type &aContactNormal,
         const impl_collision_policy &aPolicy) {
-        if (!aInternalEdges) return std::nullopt;
+        if (!aInternalEdges) return {};
 
         const auto ab = aTriangle.b - aTriangle.a;
         const auto ac = aTriangle.c - aTriangle.a;
 
         auto faceNormal = ab.cross_product(ac);
-        if (faceNormal.length() <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;
+        if (faceNormal.length() <= aPolicy.NORMALIZATION_THRESHOLD) return {};
         faceNormal = faceNormal.normal();
 
         const auto alignment = aContactNormal.dot_product(faceNormal);
-        if (std::abs(alignment) >= 1.0f - aPolicy.FACE_CONTACT_COSINE_EPSILON) return std::nullopt;
+        if (std::abs(alignment) >= 1.0f - aPolicy.FACE_CONTACT_COSINE_EPSILON) return {};
 
         const auto ap = aContactPoint - aTriangle.a;
 
@@ -148,7 +157,7 @@ namespace {
         const auto d21 = ap.dot_product(ac);
 
         const auto denominator = d00 * d11 - d01 * d01;
-        if (std::abs(denominator) <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;   
+        if (std::abs(denominator) <= aPolicy.NORMALIZATION_THRESHOLD) return {};
 
         const auto v = (d11 * d20 - d01 * d21) / denominator;
         const auto w = (d00 * d21 - d01 * d20) / denominator;
@@ -164,13 +173,15 @@ namespace {
 
         for (int e = 0; e < 3; ++e) {
             if (!on[e]) continue;
-            if (!(aInternalEdges & (1u << e))) return std::nullopt;
+            if (!(aInternalEdges & (1u << e))) return {};
             touched = true;
         }
 
-        if (!touched) return std::nullopt;
+        if (!touched) return {};
 
-        return alignment >= 0 ? faceNormal : faceNormal * -1.0f;
+        const auto snapped = alignment >= 0 ? faceNormal : faceNormal * -1.0f;
+
+        return {std::abs(alignment) <= aPolicy.INTERNAL_EDGE_GHOST_COSINE, snapped};
     }
 
     [[nodiscard]] vector3_type closest_point_on_triangle(const triangle_points &aTriangle,
@@ -1080,6 +1091,8 @@ namespace {
 
             std::optional<overlap> nearest;
 
+            std::optional<overlap> doubtful;
+
             for (const auto candidate : candidates) {
                 GDK_COLLISION_PROFILE_COUNT(triangle_tests, 1);
 
@@ -1093,23 +1106,27 @@ namespace {
 
                 if (!result) continue;
 
-                if (const auto corrected = corrected_internal_edge_normal(
-                    aMesh.data->internal_edges(candidate), world_triangle(triangle, aMeshKinematics),
-                    result->contact_point, result->contact_normal, policy))
-                    result->contact_normal = *corrected;
+                const auto verdict = corrected_internal_edge_normal(
+                    aMesh.data->internal_edges(candidate),
+                    world_triangle(triangle, aMeshKinematics),
+                    result->contact_point, result->contact_normal, policy);
+
+                if (verdict.normal) result->contact_normal = *verdict.normal;
 
                 if (!is_closing_contact(*result, aSubject, aMeshKinematics, policy)) continue;
 
-                if (!nearest
-                    || result->entry_time < nearest->entry_time - policy.AXIS_ENTRY_EPSILON
-                    || (result->entry_time <= nearest->entry_time + policy.AXIS_ENTRY_EPSILON
-                        && result->penetration > nearest->penetration))
-                    nearest = result;
+                auto &into = verdict.doubtful ? doubtful : nearest;
+
+                if (!into
+                    || result->entry_time < into->entry_time - policy.AXIS_ENTRY_EPSILON
+                    || (result->entry_time <= into->entry_time + policy.AXIS_ENTRY_EPSILON
+                        && result->penetration > into->penetration))
+                    into = result;
             }
 
             GDK_COLLISION_PROFILE_END(triangle_test_ms);
 
-            return nearest;
+            return nearest ? nearest : doubtful;
         }
 
         std::optional<overlap> operator()(const sphere_shape &aSubject, const sphere_shape &aOther) const {
