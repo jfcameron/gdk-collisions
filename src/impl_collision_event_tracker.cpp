@@ -49,15 +49,12 @@ void impl_collision_event_tracker::record_trigger(const impl_collider_ptr_type &
     record(m_Triggers, aA, aB, vector3_type::zero, vector3_type::zero, 0);
 }
 
-template <typename event_type>
 void impl_collision_event_tracker::emit(const contact_collection_type &aCurrent,
-    const contact_collection_type &aPrevious, std::vector<event_type> &aInto) {
+    const contact_collection_type &aPrevious, pending_collection_type &aInto) {
     const auto append = [&aInto](const tracked_contact &aContact, const gdk::collisions::event_type aKind) {
-        const auto a = aContact.a.lock();
-        const auto b = aContact.b.lock();
-        if (!a || !b) return;
+        if (aContact.a.expired() || aContact.b.expired()) return;
 
-        aInto.push_back(event_type{a, b, aKind});
+        aInto.push_back(pending_event{aContact.a, aContact.b, aKind});
     };
 
     std::vector<const tracked_contact *> exits;
@@ -91,8 +88,8 @@ void impl_collision_event_tracker::flush() {
     prepare(m_Collisions);
     prepare(m_Triggers);
 
-    emit<collision_event>(m_Collisions, m_PreviousCollisions, m_PendingCollisions);
-    emit<trigger_event>(m_Triggers, m_PreviousTriggers, m_PendingTriggers);
+    if (m_CollisionObserver) emit(m_Collisions, m_PreviousCollisions, m_PendingCollisions);
+    if (m_TriggerOverlapObserver) emit(m_Triggers, m_PreviousTriggers, m_PendingTriggers);
 
     m_PreviousCollisions.swap(m_Collisions);
     m_PreviousTriggers.swap(m_Triggers);
@@ -100,10 +97,19 @@ void impl_collision_event_tracker::flush() {
     m_Triggers.clear();
 }
 
-void impl_collision_event_tracker::dispatch() {
-    for (const auto &event : m_PendingCollisions) m_CollisionObserver(event);
-    for (const auto &event : m_PendingTriggers) m_TriggerOverlapObserver(event);
+template <typename delivered_type, typename observer_function>
+void impl_collision_event_tracker::dispatch(pending_collection_type &aPending, const observer_function &aObserver) {
+    for (const auto &each : aPending) {
+        const auto a = each.a.lock();
+        const auto b = each.b.lock();
 
-    m_PendingCollisions.clear();
-    m_PendingTriggers.clear();
+        if (a && b) aObserver(delivered_type{a, b, each.type});
+    }
+
+    aPending.clear();
+}
+
+void impl_collision_event_tracker::dispatch() {
+    dispatch<collision_event>(m_PendingCollisions, m_CollisionObserver);
+    dispatch<trigger_event>(m_PendingTriggers, m_TriggerOverlapObserver);
 }

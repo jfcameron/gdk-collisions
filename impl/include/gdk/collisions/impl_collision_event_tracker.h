@@ -17,6 +17,7 @@ namespace gdk::collisions {
         using observer_type = std::function<void(collision_event)>;
         using trigger_overlap_observer_type = std::function<void(trigger_event)>;
 
+        /// \brief an empty observer is nobody listening: events of that kind are not kept at all
         impl_collision_event_tracker(observer_type aCollisionObserver,
             trigger_overlap_observer_type aTriggerObserver);
 
@@ -68,15 +69,26 @@ namespace gdk::collisions {
 
         static void prepare(contact_collection_type &aContacts);
 
-        template <typename event_type>
+        /// \brief an event waiting for dispatch.
+        struct pending_event final {
+            const_collider_weak_ptr_type a;
+            const_collider_weak_ptr_type b;
+            event_type type;
+        };
+
+        using pending_collection_type = std::vector<pending_event>;
+
         static void emit(const contact_collection_type &aCurrent, const contact_collection_type &aPrevious,
-            std::vector<event_type> &aInto);
+            pending_collection_type &aInto);
+
+        template <typename delivered_type, typename observer_function>
+        static void dispatch(pending_collection_type &aPending, const observer_function &aObserver);
 
         observer_type m_CollisionObserver;
         trigger_overlap_observer_type m_TriggerOverlapObserver;
 
-        std::vector<collision_event> m_PendingCollisions;
-        std::vector<trigger_event> m_PendingTriggers;
+        pending_collection_type m_PendingCollisions;
+        pending_collection_type m_PendingTriggers;
 
     public:
         /// \brief get the collisions of the most recently completed step, sorted by key and deduplicated

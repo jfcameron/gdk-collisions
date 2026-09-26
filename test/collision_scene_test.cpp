@@ -1263,6 +1263,55 @@ TEST_CASE("gdk::scene accumulates events across several updates", "[gdk::collisi
     REQUIRE(f.collisions.front().type == event_type::enter);
 }
 
+TEST_CASE("gdk::scene lets a collider go though events naming it are waiting", "[gdk::collision]")
+{
+    fixture f;
+    auto pWall = add_static_box_at_origin(f);
+    const auto pSphere = f.scene->make_sphere_collider();
+    pSphere->set_position({-1.5f, 0, 0});
+
+    for (int frame = 0; frame < 5; ++frame) {
+        pSphere->add_velocity({1, 0, 0});
+        f.scene->update(1.0f);
+    }
+
+    const const_collider_weak_ptr_type wall = pWall;
+
+    pWall.reset();
+
+    REQUIRE(wall.expired());
+    REQUIRE_FALSE(f.scene->raycast({0, 5, 0}, {0, -1, 0}, 10));
+
+    f.scene->process_events();
+
+    REQUIRE(f.collisions.empty());
+}
+
+TEST_CASE("gdk::scene with nobody listening lets its colliders go, drained or not", "[gdk::collision]")
+{
+    const auto pScene = impl_collision_scene::make({}, {});
+
+    matrix4x4_type identity;
+    auto pWall = pScene->make_static_axis_aligned_box_collider(identity, {0.5f, 0.5f, 0.5f});
+    const auto pSphere = pScene->make_sphere_collider();
+    pSphere->set_position({-1.5f, 0, 0});
+
+    for (int frame = 0; frame < 5; ++frame) {
+        pSphere->add_velocity({1, 0, 0});
+        pScene->update(1.0f);
+    }
+
+    REQUIRE(pSphere->transform().translation().x <= Approx(-1.0f).margin(1e-3f));
+
+    const const_collider_weak_ptr_type wall = pWall;
+
+    pWall.reset();
+
+    REQUIRE(wall.expired());
+
+    pScene->process_events();
+}
+
 TEST_CASE("gdk::scene takes a static's geometry at construction", "[gdk::collision]")
 {
     fixture f;
