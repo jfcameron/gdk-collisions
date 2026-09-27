@@ -1069,6 +1069,55 @@ TEST_CASE("gdk::scene raycast finds the nearest collider", "[gdk::collision]")
         REQUIRE(hit->distance == Approx(9.5f).margin(1e-2f));
     }
 
+    SECTION("a ray from inside a collider it is told to ignore goes through it to what is beyond")
+    {
+        // a capsule standing in front of the box, the ray starting in its middle
+        const auto pCapsule = f.scene->make_capsule_collider();
+        pCapsule->set_position({-3, 0, 0});
+
+        const auto first = f.scene->raycast({-3, 0, 0}, {1, 0, 0}, 20.0f);
+
+        REQUIRE(first.has_value());
+        REQUIRE(first->collider == const_collider_ptr_type(pCapsule));
+
+        const auto through = f.scene->raycast({-3, 0, 0}, {1, 0, 0}, 20.0f, pCapsule.get());
+
+        REQUIRE(through.has_value());
+        REQUIRE(through->collider == const_collider_ptr_type(pWall));
+        REQUIRE(through->distance == Approx(2.5f).margin(1e-2f));
+    }
+
+    SECTION("a ray for the world alone goes through whatever moves")
+    {
+        const auto pCapsule = f.scene->make_capsule_collider();
+        pCapsule->set_position({-3, 0, 0});
+
+        const auto hit = f.scene->raycast_static({-10, 0, 0}, {1, 0, 0}, 20.0f);
+
+        REQUIRE(hit.has_value());
+        REQUIRE(hit->collider == const_collider_ptr_type(pWall));
+        REQUIRE(hit->distance == Approx(9.5f).margin(1e-2f));
+
+        // **and finds nothing where there is only something moving**
+        REQUIRE_FALSE(f.scene->raycast_static({-3, 5, 0}, {0, -1, 0}, 4.0f).has_value());
+        REQUIRE(f.scene->raycast({-3, 5, 0}, {0, -1, 0}, 4.0f).has_value());
+    }
+
+    SECTION("a ray aimed down at an oriented box reports the normal of the face it struck, facing back up the ray")
+    {
+        matrix4x4_type placed;
+        placed.set_translation({0, -5, 0});
+
+        const auto pSlab = f.scene->make_static_obb_collider(placed, {2.0f, 0.5f, 2.0f});
+
+        const auto hit = f.scene->raycast({0, -2, 0}, {0, -1, 0}, 10.0f);
+
+        REQUIRE(hit.has_value());
+        REQUIRE(hit->collider == const_collider_ptr_type(pSlab));
+        REQUIRE(hit->distance == Approx(2.5f).margin(1e-2f));
+        require_vector_near(hit->normal, {0, 1, 0}, 1e-2f);
+    }
+
     SECTION("a degenerate ray reports nothing rather than misbehaving")
     {
         REQUIRE_FALSE(f.scene->raycast({-10, 0, 0}, {0, 0, 0}, 20.0f).has_value());
@@ -2958,4 +3007,22 @@ TEST_CASE("gdk::collider set_rotation normalises what it is given", "[gdk::colli
         REQUIRE(std::isfinite(scale.x));
         REQUIRE(scale.x == Approx(1.0f).margin(1e-4f));
     }
+}
+
+TEST_CASE("gdk::scene raycast against a turned oriented box", "[gdk::collision][!shouldfail]")
+{
+    fixture f;
+
+    const float turn = 0.349066f;
+
+    matrix4x4_type placed;
+    placed.set_rotation(quaternion_type({0, 0, turn}));
+    placed.set_translation({0, -5, 0});
+
+    static_cast<void>(f.scene->make_static_obb_collider(placed, {2.0f, 0.5f, 2.0f}));
+
+    const auto hit = f.scene->raycast({0, -2, 0}, {0, -1, 0}, 10.0f);
+
+    REQUIRE(hit.has_value());
+    require_vector_near(hit->normal, {-std::sin(turn), std::cos(turn), 0}, 1e-2f);
 }

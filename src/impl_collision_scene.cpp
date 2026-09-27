@@ -226,7 +226,7 @@ namespace {
 
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
-            const floating_point_type aMaxDistance) const override;
+            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const override;
 
         [[nodiscard]] virtual std::vector<contact> do_contacts() const override;
         [[nodiscard]] virtual std::vector<contact> do_contacts_for(const collider &aCollider) const override;
@@ -868,7 +868,8 @@ std::vector<contact> scene_implementation::do_contacts_for(const collider &aColl
 }
 
 std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &aOrigin,
-    const vector3_type &aDirection, const floating_point_type aMaxDistance) const {
+    const vector3_type &aDirection, const floating_point_type aMaxDistance, const collider *const pIgnore,
+    const bool aStaticOnly) const {
     const auto direction = aDirection.normal();
     if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
 
@@ -878,6 +879,8 @@ std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &
     std::optional<raycast_hit> nearest;
 
     const auto consider = [&](const impl_collider_ptr_type &pCollider) {
+        if (pIgnore && static_cast<const collider *>(pCollider.get()) == pIgnore) return;
+
         const auto result = narrow_phase_overlap_parts(ray, rayKinematics,
             pCollider->parts(),
             {pCollider->position(), pCollider->velocity(), pCollider->rotation()},
@@ -910,8 +913,9 @@ std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &
     for (const auto &candidate : candidates)
         if (candidate.kind == impl_broadphase_grid::body_kind::collider) consider(candidate.ptr);
 
-    for (const auto &weak : m_DynamicColliders)
-        if (const auto pCollider = weak.lock()) consider(pCollider);
+    if (!aStaticOnly)
+        for (const auto &weak : m_DynamicColliders)
+            if (const auto pCollider = weak.lock()) consider(pCollider);
 
     return nearest;
 }

@@ -28,10 +28,20 @@ namespace gdk::collisions {
         void process_events() { do_process_events(); }
 
         /// \brief find the nearest collider along a ray.
+        ///
+        /// \param pIgnore a collider the ray goes through as if it were not there 
         [[nodiscard]] std::optional<raycast_hit> raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
+            const floating_point_type aMaxDistance,
+            const collider *pIgnore = nullptr) const {
+            return do_raycast(aOrigin, aDirection, aMaxDistance, pIgnore, false);
+        }
+
+        /// \brief the nearest immovable collider along a ray
+        [[nodiscard]] std::optional<raycast_hit> raycast_static(const vector3_type &aOrigin,
+            const vector3_type &aDirection,
             const floating_point_type aMaxDistance) const {
-            return do_raycast(aOrigin, aDirection, aMaxDistance);
+            return do_raycast(aOrigin, aDirection, aMaxDistance, nullptr, true);
         }
 
         /// \brief every solid contact detected during the most recent step.
@@ -232,7 +242,7 @@ namespace gdk::collisions {
 
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
-            const floating_point_type aMaxDistance) const = 0;
+            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const = 0;
 
         [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_collider(const response_handler &) = 0;
         [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_trigger() = 0;
