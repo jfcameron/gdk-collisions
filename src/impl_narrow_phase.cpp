@@ -16,6 +16,8 @@
 using namespace gdk::collisions;
 
 namespace {
+    constexpr gdk::collisions::floating_point_type ROUNDING_UNITS = 8;
+
     /// \brief axis aligned bounds of a shape sitting at a position
     struct bounds final {
         vector3_type min;
@@ -285,7 +287,7 @@ namespace {
             return aSegment.a + direction * aT;
         };
 
-        std::array<floating_point_type, 8> candidates{};
+        std::array<floating_point_type, 2 + 6> candidates{};
         std::size_t candidateCount = 0;
         candidates[candidateCount++] = 0;
         candidates[candidateCount++] = 1;
@@ -304,7 +306,9 @@ namespace {
         add_crossing(aSegment.a.z, direction.z, aBounds.min.z);
         add_crossing(aSegment.a.z, direction.z, aBounds.max.z);
 
-        std::sort(candidates.begin(), candidates.begin() + candidateCount);
+        candidateCount = std::min(candidateCount, candidates.size());
+
+        std::sort(candidates.begin(), candidates.begin() + static_cast<std::ptrdiff_t>(candidateCount));
 
         auto bestT = floating_point_type{0};
         auto bestDistanceSquared = std::numeric_limits<floating_point_type>::max();
@@ -349,7 +353,7 @@ namespace {
         const auto onSegment = point_at(bestT);
         const auto onBox = closest_point_on_box(aBounds, onSegment);
 
-        if ((onBox - onSegment).length_squared() <= aPolicy.NORMALIZATION_THRESHOLD)
+        if (onBox.x == onSegment.x && onBox.y == onSegment.y && onBox.z == onSegment.z)
             return closest_points{onSegment, nearest_face_point(aBounds, onSegment), true};
 
         return closest_points{onSegment, onBox, false};
@@ -424,17 +428,33 @@ namespace {
                 aPolicy);
         };
 
-        const auto contact_at = [&](const delta_time_type aTime, const separation &aSample) {
+        const auto rounding_of = [](const separation &aSample) {
+            const auto &a = aSample.points.on_first, &b = aSample.points.on_second;
+
+            const auto scale = std::max({std::abs(a.x), std::abs(a.y), std::abs(a.z), std::abs(b.x), std::abs(b.y), std::abs(b.z)});
+
+            return ROUNDING_UNITS * std::numeric_limits<floating_point_type>::epsilon() * scale;
+        };
+
+        std::optional<vector3_type> lastReadable;
+
+        const auto readable_of = [&](const separation &aSample) -> std::optional<vector3_type> {
             const auto delta = aSample.points.inside
                 ? aSample.points.on_second - aSample.points.on_first
                 : aSample.points.on_first - aSample.points.on_second;
 
             const auto length = delta.length();
-            const auto normal = length > aPolicy.NORMALIZATION_THRESHOLD
-                ? delta * (1.0f / length)
-                : (relativeSpeed > aPolicy.NORMALIZATION_THRESHOLD
+
+            if (length > aPolicy.NORMALIZATION_THRESHOLD + rounding_of(aSample)) return delta * (1.0f / length);
+
+            return std::nullopt;
+        };
+
+        const auto contact_at = [&](const delta_time_type aTime, const separation &aSample) {
+            const auto normal = readable_of(aSample).value_or(lastReadable.value_or(
+                relativeSpeed > aPolicy.NORMALIZATION_THRESHOLD
                     ? relativeVelocity.normal() * -1.0f
-                    : vector3_type{0, 1, 0});
+                    : vector3_type{0, 1, 0}));
 
             overlap result;
             result.entry_time = aTime;
@@ -454,7 +474,9 @@ namespace {
             const auto sample = sample_at(time);
             const auto gap = sample.distance - contactRadius;
 
-            if (gap <= aPolicy.PENETRATION_DEPTH_EPSILON) return contact_at(time, sample);
+            if (gap <= aPolicy.PENETRATION_DEPTH_EPSILON + rounding_of(sample)) return contact_at(time, sample);
+
+            if (const auto readable = readable_of(sample)) lastReadable = readable;
 
             if (relativeSpeed <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;
 

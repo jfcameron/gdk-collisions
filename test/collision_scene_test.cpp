@@ -1071,7 +1071,6 @@ TEST_CASE("gdk::scene raycast finds the nearest collider", "[gdk::collision]")
 
     SECTION("a ray from inside a collider it is told to ignore goes through it to what is beyond")
     {
-        // a capsule standing in front of the box, the ray starting in its middle
         const auto pCapsule = f.scene->make_capsule_collider();
         pCapsule->set_position({-3, 0, 0});
 
@@ -1098,7 +1097,6 @@ TEST_CASE("gdk::scene raycast finds the nearest collider", "[gdk::collision]")
         REQUIRE(hit->collider == const_collider_ptr_type(pWall));
         REQUIRE(hit->distance == Approx(9.5f).margin(1e-2f));
 
-        // **and finds nothing where there is only something moving**
         REQUIRE_FALSE(f.scene->raycast_static({-3, 5, 0}, {0, -1, 0}, 4.0f).has_value());
         REQUIRE(f.scene->raycast({-3, 5, 0}, {0, -1, 0}, 4.0f).has_value());
     }
@@ -3009,7 +3007,7 @@ TEST_CASE("gdk::collider set_rotation normalises what it is given", "[gdk::colli
     }
 }
 
-TEST_CASE("gdk::scene raycast against a turned oriented box", "[gdk::collision][!shouldfail]")
+TEST_CASE("gdk::scene raycast against a turned oriented box", "[gdk::collision]")
 {
     fixture f;
 
@@ -3019,10 +3017,56 @@ TEST_CASE("gdk::scene raycast against a turned oriented box", "[gdk::collision][
     placed.set_rotation(quaternion_type({0, 0, turn}));
     placed.set_translation({0, -5, 0});
 
-    static_cast<void>(f.scene->make_static_obb_collider(placed, {2.0f, 0.5f, 2.0f}));
+    const auto pBox = f.scene->make_static_obb_collider(placed, {2.0f, 0.5f, 2.0f});
 
     const auto hit = f.scene->raycast({0, -2, 0}, {0, -1, 0}, 10.0f);
 
     REQUIRE(hit.has_value());
     require_vector_near(hit->normal, {-std::sin(turn), std::cos(turn), 0}, 1e-2f);
+}
+
+TEST_CASE("gdk::scene raycast finds a flat mesh floor at every point, far from the origin", "[gdk::collision]")
+{
+    fixture f;
+
+    std::vector<vector3_type> vertices;
+    std::vector<std::uint32_t> indices;
+
+    for (int x = 8; x < 20; ++x)
+        for (int z = 12; z < 20; ++z) {
+            const auto base = static_cast<std::uint32_t>(vertices.size());
+            const auto fx = static_cast<floating_point_type>(x), fz = static_cast<floating_point_type>(z);
+
+            vertices.insert(vertices.end(), {{fx, 4, fz}, {fx, 4, fz + 1}, {fx + 1, 4, fz + 1}, {fx + 1, 4, fz}});
+            indices.insert(indices.end(), {base, base + 1u, base + 2u, base, base + 2u, base + 3u});
+        }
+
+    matrix4x4_type identity;
+    const auto pFloor = f.scene->make_static_mesh_collider(identity, impl_mesh_data::make(std::move(vertices), std::move(indices)));
+
+    f.update(1.0f / 30);
+
+    int missed = 0, looked = 0;
+
+    for (floating_point_type x = 8.5f; x < 19.5f; x += 0.013f)
+        for (floating_point_type z = 12.5f; z < 19.5f; z += 0.29f) {
+            ++looked;
+
+            const auto hit = f.scene->raycast_static({x, 4.9f, z}, {0, -1, 0}, 1.8f);
+
+            if (!hit || std::abs(hit->point.y - 4) > 1e-3f)
+                if (++missed <= 5) UNSCOPED_INFO("missed at (" << x << ", " << z << ")");
+        }
+
+    INFO(missed << " of " << looked << " rays missed");
+
+    REQUIRE(looked > 10000);
+    REQUIRE(missed == 0);
+
+    for (const auto &[x, z] : {std::pair{0x1.8e70e6p+3f, 0x1.0cf17ep+4f}, std::pair{0x1.af2956p+3f, 0x1.0ca3eep+4f},
+            std::pair{0x1.b1263ep+3f, 0x1.08d5e6p+4f}}) {
+        INFO("at (" << x << ", " << z << ")");
+
+        REQUIRE(f.scene->raycast_static({x, 0x1.39999ap+2f, z}, {0, -1, 0}, 1.8f).has_value());
+    }
 }
