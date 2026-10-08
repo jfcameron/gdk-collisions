@@ -59,6 +59,9 @@ namespace gdk::collisions {
 
         /// \brief minimum offset applied after collision resolution
         const floating_point_type POST_RESOLUTION_SEPARATION_EPSILON{1e-3f};
+
+        /// \brief the fewest moving bodies a scene hands to its dispatcher. If there are less than this an update works serially
+        const std::size_t PARALLEL_MIN_BODIES{80};
     };
 }
 

@@ -228,6 +228,12 @@ namespace {
             const vector3_type &aDirection,
             const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const override;
 
+        [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const override;
+        [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const override;
+
+        template <typename reaches_type>
+        [[nodiscard]] bool any_static(const impl_collider::broadphase_bounds &aBounds, const reaches_type &aReaches) const;
+
         [[nodiscard]] virtual std::vector<contact> do_contacts() const override;
         [[nodiscard]] virtual std::vector<contact> do_contacts_for(const collider &aCollider) const override;
 
@@ -269,9 +275,9 @@ namespace {
         /// scenes in the same process cannot perturb each other's ordering.
         [[nodiscard]] collider_id_type next_collider_id() { return m_NextColliderId++; }
 
-        /// \brief queue an immovable body for the persistent grid.
         void register_static(const impl_collider_ptr_type &aBody, const impl_broadphase_grid::body_kind aKind) {
-            m_PendingStatics.push_back({aBody, aKind});
+            if (m_Updating) m_PendingStatics.push_back({aBody, aKind});
+            else m_StaticGrid.insert(aBody, aBody->broad_phase_bounds(), aKind, true);
         }
 
         /// \brief move anything queued into the persistent grid.
@@ -303,6 +309,8 @@ namespace {
         impl_dynamic_broadphase_grid m_DynamicGrid;
 
         std::vector<std::pair<impl_collider_weak_ptr_type, impl_broadphase_grid::body_kind>> m_PendingStatics;
+
+        bool m_Updating = false;
 
         impl_broadphase_grid m_StaticGrid;
 
@@ -528,6 +536,8 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
 
         m_StaticGrid.gather_overlapping_excluding(bounds, &aSubject, seen, aOut);
         m_DynamicGrid.gather_overlapping_excluding(bounds, &aSubject, seen, aOut);
+
+        std::erase_if(aOut, [&aSubject](const body_ref &aNeighbour) { return !aSubject.meets(*aNeighbour.ptr); });
         GDK_COLLISION_PROFILE_END(gather_query_ms);
 
         GDK_COLLISION_PROFILE_BEGIN(gather_sort_ms);
@@ -554,6 +564,12 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     for (auto &pKinematic : kinematicColliders) pKinematic->integrate_angular_velocity(aDeltaTime);
     for (auto &pTrigger : dynamicTriggers) pTrigger->integrate_angular_velocity(aDeltaTime);
 
+    static const task_dispatcher_type SERIAL{};
+
+    const auto &dispatcher = m_Dispatcher
+        && dynamicColliders.size() + kinematicColliders.size() + dynamicTriggers.size() >= m_Policy.PARALLEL_MIN_BODIES
+        ? m_Dispatcher : SERIAL;
+
     GDK_COLLISION_PROFILE_BEGIN(broadphase_rebuild_ms);
 
     m_DynamicGrid.clear();
@@ -568,7 +584,7 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     for (auto &pTrigger : dynamicTriggers)
         m_DynamicGrid.add(pTrigger, pTrigger->broad_phase_swept_bounds(aDeltaTime), body_kind::trigger);
 
-    m_DynamicGrid.build(m_Dispatcher);
+    m_DynamicGrid.build(dispatcher);
 
     GDK_COLLISION_PROFILE_END(broadphase_rebuild_ms);
     GDK_COLLISION_PROFILE_BEGIN(kinematic_pass_ms);
@@ -600,7 +616,7 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     m_Advancement.resize(dynamicColliders.size());
 
     const auto chunkSize = std::max<std::size_t>(m_Policy.PARALLEL_DETECT_CHUNK_SIZE, 1);
-    const auto chunkCount = m_Dispatcher
+    const auto chunkCount = dispatcher
         ? (dynamicColliders.size() + chunkSize - 1) / chunkSize
         : std::size_t{1};
 
@@ -626,8 +642,8 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     const auto detect_chunk = [&](const std::size_t aChunk) {
         auto &scratch = m_DetectScratch[aChunk];
 
-        const auto begin = m_Dispatcher ? aChunk * chunkSize : std::size_t{0};
-        const auto end = m_Dispatcher
+        const auto begin = dispatcher ? aChunk * chunkSize : std::size_t{0};
+        const auto end = dispatcher
             ? std::min(begin + chunkSize, m_DetectOrder.size())
             : m_DetectOrder.size();
 
@@ -679,7 +695,7 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
         for (const auto &state : m_Advancement) if (state.active) { anyActive = true; break; }
         if (!anyActive) break;
 
-        if (m_Dispatcher) m_Dispatcher(chunkCount, detect_chunk);
+        if (dispatcher) dispatcher(chunkCount, detect_chunk);
         else detect_chunk(0);
 
         GDK_COLLISION_PROFILE_BEGIN(resolve_respond_ms);
@@ -836,9 +852,14 @@ namespace {
         std::vector<contact> result;
 
         const auto &recorded = aEvents.last_step_collisions();
-        result.reserve(recorded.size());
+
+        const auto *const pOnly = aOnly ? dynamic_cast<const impl_collider *>(aOnly) : nullptr;
+
+        if (!aOnly) result.reserve(recorded.size());
 
         for (const auto &entry : recorded) {
+            if (pOnly && entry.key.low != pOnly->id() && entry.key.high != pOnly->id()) continue;
+
             auto a = entry.a.lock();
             auto b = entry.b.lock();
             if (!a || !b) continue;
@@ -873,51 +894,95 @@ std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &
     const auto direction = aDirection.normal();
     if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
 
-    static const std::vector<collider_part> ray{collider_part{sphere_shape{0.0f}}};
-    const shape_kinematics rayKinematics{aOrigin, direction, quaternion_type::identity};
-
     std::optional<raycast_hit> nearest;
+    impl_collider_weak_ptr_type nearestCollider;
 
-    const auto consider = [&](const impl_collider_ptr_type &pCollider) {
-        if (pIgnore && static_cast<const collider *>(pCollider.get()) == pIgnore) return;
+    const auto consider = [&](const impl_collider &aCollider, const impl_collider_weak_ptr_type &aWeak) {
+        if (pIgnore && static_cast<const collider *>(&aCollider) == pIgnore) return;
 
-        const auto result = narrow_phase_overlap_parts(ray, rayKinematics,
-            pCollider->parts(),
-            {pCollider->position(), pCollider->velocity(), pCollider->rotation()},
-            aMaxDistance, m_Policy);
+        const auto result = narrow_phase_ray_parts(aOrigin, direction, nearest ? nearest->distance : aMaxDistance,
+            aCollider.parts(), {aCollider.position(), aCollider.velocity(), aCollider.rotation()});
 
         if (!result) return;
         if (nearest && result->entry_time >= nearest->distance) return;
 
         raycast_hit hit;
-        hit.collider = pCollider;
         hit.distance = result->entry_time;
         hit.point = result->contact_point;
         hit.normal = result->contact_normal;
         nearest = hit;
+        nearestCollider = aWeak;
     };
 
     for (const auto &pending : m_PendingStatics)
         if (pending.second == impl_broadphase_grid::body_kind::collider)
-            if (const auto pBody = pending.first.lock()) consider(pBody);
+            if (const auto pBody = pending.first.lock()) consider(*pBody, pending.first);
 
     impl_collider::broadphase_bounds rayBounds;
     const auto tip = aOrigin + direction * aMaxDistance;
     rayBounds.min = vector3_type::min(aOrigin, tip);
     rayBounds.max = vector3_type::max(aOrigin, tip);
 
-    collider_id_set seen;
-    std::vector<impl_broadphase_grid::neighbour> candidates;
-    m_StaticGrid.gather_overlapping(rayBounds, seen, candidates);
+    thread_local collider_id_set seen;
 
-    for (const auto &candidate : candidates)
-        if (candidate.kind == impl_broadphase_grid::body_kind::collider) consider(candidate.ptr);
+    seen.clear();
+
+    m_StaticGrid.visit_overlapping(rayBounds, seen, [&](const impl_collider &aCollider,
+        const impl_broadphase_grid::body_kind aKind, const impl_collider_weak_ptr_type &aWeak) {
+        if (aKind == impl_broadphase_grid::body_kind::collider) consider(aCollider, aWeak);
+    });
 
     if (!aStaticOnly)
         for (const auto &weak : m_DynamicColliders)
-            if (const auto pCollider = weak.lock()) consider(pCollider);
+            if (const auto pCollider = weak.lock()) consider(*pCollider, weak);
+
+    if (nearest) nearest->collider = nearestCollider.lock();
 
     return nearest;
+}
+
+template <typename reaches_type>
+bool scene_implementation::any_static(const impl_collider::broadphase_bounds &aBounds, const reaches_type &aReaches) const {
+    for (const auto &pending : m_PendingStatics)
+        if (pending.second == impl_broadphase_grid::body_kind::collider)
+            if (const auto pBody = pending.first.lock(); pBody && aReaches(*pBody)) return true;
+
+    thread_local collider_id_set seen;
+
+    seen.clear();
+
+    bool found = false;
+
+    m_StaticGrid.visit_overlapping(aBounds, seen, [&](const impl_collider &aCollider,
+        const impl_broadphase_grid::body_kind aKind, const impl_collider_weak_ptr_type &) {
+        if (!found && aKind == impl_broadphase_grid::body_kind::collider && aReaches(aCollider)) found = true;
+    });
+
+    return found;
+}
+
+bool scene_implementation::do_overlaps_static(const upright_cylinder &aVolume) const {
+    if (aVolume.radius <= 0 || aVolume.height <= 0) return false;
+
+    impl_collider::broadphase_bounds volume;
+    volume.min = {aVolume.base.x - aVolume.radius, aVolume.base.y, aVolume.base.z - aVolume.radius};
+    volume.max = {aVolume.base.x + aVolume.radius, aVolume.base.y + aVolume.height, aVolume.base.z + aVolume.radius};
+
+    return any_static(volume, [&](const impl_collider &aCollider) {
+        return narrow_phase_cylinder_parts(aVolume, aCollider.parts(),
+            {aCollider.position(), aCollider.velocity(), aCollider.rotation()});
+    });
+}
+
+bool scene_implementation::do_overlaps_static(const parallelepiped &aVolume) const {
+    impl_collider::broadphase_bounds volume;
+    volume.min = parallelepiped_low(aVolume);
+    volume.max = parallelepiped_high(aVolume);
+
+    return any_static(volume, [&](const impl_collider &aCollider) {
+        return narrow_phase_parallelepiped_parts(aVolume, aCollider.parts(),
+            {aCollider.position(), aCollider.velocity(), aCollider.rotation()});
+    });
 }
 
 void scene_implementation::do_process_events() {
@@ -926,6 +991,14 @@ void scene_implementation::do_process_events() {
 
 void scene_implementation::do_update(const delta_time_type aDeltaTime) {
     GDK_COLLISION_PROFILE_BEGIN(total_ms);
+
+    m_Updating = true;
+
+    const struct updated_on_exit final {
+        bool &updating;
+
+        ~updated_on_exit() { updating = false; }
+    } updated{m_Updating};
 
     const auto subDeltaTime = aDeltaTime / m_Policy.STEPS_PER_UPDATE;
     for (unsigned short int step(0); step < m_Policy.STEPS_PER_UPDATE; ++step) update_step(subDeltaTime);

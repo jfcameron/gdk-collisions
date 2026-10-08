@@ -8,6 +8,8 @@
 #include <gdk/collisions/impl_collision_policy.h>
 #include <gdk/collisions/impl_collision_scene.h>
 #include <gdk/collisions/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/impl_mesh_data.h>
+#include <gdk/collisions/mesh_collider.h>
 #include <gdk/collisions/sphere_collider.h>
 
 #include <algorithm>
@@ -71,13 +73,25 @@ namespace {
 
         flatGrid.build();
 
+        const auto overlapping = [](const impl_collider::broadphase_bounds &a, const impl_collider::broadphase_bounds &b) {
+            return a.min.x <= b.max.x && b.min.x <= a.max.x && a.min.y <= b.max.y && b.min.y <= a.max.y
+                && a.min.z <= b.max.z && b.min.z <= a.max.z;
+        };
+
         std::size_t total = 0;
 
         for (const auto &pBody : aFixture.bodies) {
             const auto fromNode = neighbour_ids(nodeGrid, *pBody);
             const auto fromFlat = neighbour_ids(flatGrid, *pBody);
 
-            REQUIRE(fromFlat == fromNode);
+            REQUIRE(std::includes(fromNode.begin(), fromNode.end(), fromFlat.begin(), fromFlat.end()));
+
+            const auto query = pBody->broad_phase_swept_bounds(DELTA_TIME);
+
+            for (const auto &pOther : aFixture.bodies)
+                if (pOther != pBody && overlapping(query, pOther->broad_phase_swept_bounds(DELTA_TIME)))
+                    REQUIRE(std::binary_search(fromFlat.begin(), fromFlat.end(), pOther->id()));
+
             total += fromFlat.size();
         }
 
@@ -188,4 +202,69 @@ TEST_CASE("gdk::impl_dynamic_broadphase_grid reports nothing between clear and b
     grid.clear();
 
     REQUIRE(neighbour_ids(grid, *fixture.bodies.front()).empty());
+}
+
+TEST_CASE("gdk::impl_collider bounds a mesh by its own corners, not round where its collider is", "[gdk::collision]") {
+    auto pScene = impl_collision_scene::make(nullptr, nullptr, impl_collision_policy{});
+
+    const auto pMesh = impl_mesh_data::make(
+        {{64, 4, 64}, {80, 4, 64}, {80, 4, 80}, {64, 4, 80}}, {0, 1, 2, 0, 2, 3});
+
+    const auto pGround = pScene->make_static_mesh_collider(matrix4x4_type::identity, pMesh);
+    const auto bounds = std::dynamic_pointer_cast<const impl_collider>(pGround)->broad_phase_bounds();
+
+    CHECK(bounds.min.x == Approx(64));
+    CHECK(bounds.max.x == Approx(80));
+    CHECK(bounds.min.z == Approx(64));
+    CHECK(bounds.max.z == Approx(80));
+    CHECK(bounds.min.y == Approx(4));
+
+    const impl_collision_policy policy;
+    impl_broadphase_grid grid(policy);
+
+    grid.insert(std::const_pointer_cast<impl_collider>(std::dynamic_pointer_cast<const impl_collider>(pGround)), bounds,
+        impl_broadphase_grid::body_kind::collider, true);
+
+    auto fixture = make_fixture();
+    fixture.add({0, 4.5f, 0}, 0.5f);
+    fixture.add({70, 4.5f, 70}, 0.5f);
+
+    CHECK(neighbour_ids(grid, *fixture.bodies[0]).empty());
+    CHECK(neighbour_ids(grid, *fixture.bodies[1]).size() == 1);
+}
+
+TEST_CASE("gdk::impl_dynamic_broadphase_grid answers a moving body to a query its sweep could turn it into",
+    "[gdk::collision]") {
+    auto fixture = make_fixture();
+
+    fixture.add({0, 4, 0}, 0.5f, {60, 0, 0});
+    fixture.add({0.5f, 4, 1.3f}, 0.5f);
+
+    const impl_collision_policy policy;
+    impl_dynamic_broadphase_grid grid(policy);
+
+    for (const auto &pBody : fixture.bodies)
+        grid.add(pBody, pBody->broad_phase_swept_bounds(DELTA_TIME), impl_dynamic_broadphase_grid::body_kind::collider);
+
+    grid.build();
+
+    REQUIRE(fixture.bodies[0]->broad_phase_swept_bounds(DELTA_TIME).max.z
+        < fixture.bodies[1]->broad_phase_swept_bounds(DELTA_TIME).min.z);
+
+    const auto met = neighbour_ids(grid, *fixture.bodies[1]);
+
+    CHECK(std::find(met.begin(), met.end(), fixture.bodies[0]->id()) != met.end());
+
+    fixture.add({0.5f, 4, 4.0f}, 0.5f);
+
+    impl_dynamic_broadphase_grid again(policy);
+
+    for (const auto &pBody : fixture.bodies)
+        again.add(pBody, pBody->broad_phase_swept_bounds(DELTA_TIME), impl_dynamic_broadphase_grid::body_kind::collider);
+
+    again.build();
+
+    const auto far = neighbour_ids(again, *fixture.bodies[2]);
+
+    CHECK(std::find(far.begin(), far.end(), fixture.bodies[0]->id()) == far.end());
 }

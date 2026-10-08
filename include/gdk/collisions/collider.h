@@ -59,6 +59,15 @@ namespace gdk::collisions {
         /// \brief the velocity this collider finished its last update() with.
         [[nodiscard]] virtual vector3_type resolved_velocity() const = 0;
 
+        /// \brief sets which layers this collider is in and which layers it can collide with
+        virtual void set_collision_layers(const collision_layers_type aOn, const collision_layers_type aCollidesWith) = 0;
+
+        /// \brief the layers this collider is on
+        [[nodiscard]] virtual collision_layers_type collision_layers() const = 0;
+
+        /// \brief the layers this collider collides with
+        [[nodiscard]] virtual collision_layers_type collides_with() const = 0;
+
         /// \brief this collider's orientation within its scene.
         [[nodiscard]] virtual quaternion_type rotation() const = 0;
 

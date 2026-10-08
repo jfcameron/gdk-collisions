@@ -63,6 +63,8 @@ namespace gdk::collisions {
             cell_key min;
             cell_key max;
 
+            impl_collider::broadphase_bounds reach;
+
             /// too large to bin: a neighbour of every query instead. \see impl_collision_policy
             bool unbinned;
         };

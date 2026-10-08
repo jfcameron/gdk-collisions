@@ -163,3 +163,51 @@ TEST_CASE("gdk::scene gives the same result on several threads", "[gdk::collisio
 
     for (int attempt = 0; attempt < 8; ++attempt) REQUIRE(identical(run(threaded), serial));
 }
+
+TEST_CASE("gdk::scene hands work to its dispatcher only with enough bodies to be worth it", "[gdk::collision]") {
+    const auto counting = [](std::size_t &aCalls) {
+        return task_dispatcher_type([&aCalls](std::size_t aCount, const chunk_type &aChunk) {
+            ++aCalls;
+
+            for (std::size_t i = 0; i < aCount; ++i) aChunk(i);
+        });
+    };
+
+    const auto updated = [](const impl_collision_policy &aPolicy, const task_dispatcher_type &aDispatcher, const int aBodies) {
+        const auto scene = impl_collision_scene::make(nullptr, nullptr, aPolicy, aDispatcher);
+        const auto ground = scene->make_static_plane_collider(matrix4x4_type::identity);
+
+        std::vector<sphere_collider_ptr_type> bodies;
+
+        for (int i = 0; i < aBodies; ++i) {
+            auto pSphere = scene->make_sphere_collider();
+            pSphere->set_position({(i % 10) * 1.5f, 1.0f, (i / 10) * 1.5f});
+            pSphere->add_velocity({0.0f, -2.0f, 0.0f});
+            bodies.push_back(pSphere);
+        }
+
+        scene->update(DELTA_TIME);
+    };
+
+    const impl_collision_policy policy;
+
+    std::size_t calls = 0;
+
+    SECTION("one short of the policy's fewest: never called") {
+        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_BODIES) - 1);
+
+        REQUIRE(calls == 0);
+    }
+
+    SECTION("the policy's fewest: called") {
+        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_BODIES));
+
+        REQUIRE(calls > 0);
+    }
+
+    SECTION("a policy of none at all: called for a single body") {
+        updated(impl_collision_policy{.PARALLEL_MIN_BODIES = 0}, counting(calls), 1);
+
+        REQUIRE(calls > 0);
+    }
+}

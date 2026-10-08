@@ -48,6 +48,13 @@ namespace gdk::collisions {
         virtual void set_angular_velocity(const vector3_type &aAngularVelocity) override;
         [[nodiscard]] virtual vector3_type angular_velocity() const override;
 
+        virtual void set_collision_layers(const collision_layers_type aOn, const collision_layers_type aCollidesWith) override;
+        [[nodiscard]] virtual collision_layers_type collision_layers() const override;
+        [[nodiscard]] virtual collision_layers_type collides_with() const override;
+
+        /// \brief whether this and aOther meet at all: each collides with a layer the other is on
+        [[nodiscard]] bool meets(const impl_collider &aOther) const;
+
         /// \brief turn by the angular velocity over aDeltaTime.
         void integrate_angular_velocity(const delta_time_type aDeltaTime);
 
@@ -100,6 +107,8 @@ namespace gdk::collisions {
         vector3_type m_AngularVelocity;
         floating_point_type m_InverseOverlapWeight = 0;
         bool m_Kinematic = false;
+        collision_layers_type m_On = DEFAULT_COLLISION_LAYER;
+        collision_layers_type m_CollidesWith = ALL_COLLISION_LAYERS;
         vector3_type m_ResolvedVelocity;
     };
 }

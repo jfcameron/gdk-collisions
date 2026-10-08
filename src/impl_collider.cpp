@@ -127,10 +127,10 @@ impl_collider::broadphase_bounds impl_collider::broad_phase_bounds() const {
 
     for (const auto &part : m_Parts) {
         const auto centre = origin + orientation * part.position;
-        const auto extents = shape_extents(part.shape, orientation * part.rotation);
+        const auto offsets = shape_bounds(part.shape, orientation * part.rotation);
 
-        const auto partLow = centre - extents;
-        const auto partHigh = centre + extents;
+        const auto partLow = centre + offsets.low;
+        const auto partHigh = centre + offsets.high;
 
         low = first ? partLow : vector3_type::min(low, partLow);
         high = first ? partHigh : vector3_type::max(high, partHigh);
@@ -176,3 +176,15 @@ floating_point_type impl_collider::displacement_share() const {
     return m_Kinematic ? 0 : m_InverseOverlapWeight;
 }
 
+void impl_collider::set_collision_layers(const collision_layers_type aOn, const collision_layers_type aCollidesWith) {
+    m_On = aOn;
+    m_CollidesWith = aCollidesWith;
+}
+
+collision_layers_type impl_collider::collision_layers() const { return m_On; }
+
+collision_layers_type impl_collider::collides_with() const { return m_CollidesWith; }
+
+bool impl_collider::meets(const impl_collider &aOther) const {
+    return (m_On & aOther.m_CollidesWith) != 0 && (aOther.m_On & m_CollidesWith) != 0;
+}

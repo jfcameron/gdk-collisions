@@ -11,6 +11,14 @@
 
 using namespace gdk::collisions;
 
+namespace {
+    [[nodiscard]] bool overlaps(const impl_collider::broadphase_bounds &a, const impl_collider::broadphase_bounds &b) {
+        return a.min.x <= b.max.x && b.min.x <= a.max.x
+            && a.min.y <= b.max.y && b.min.y <= a.max.y
+            && a.min.z <= b.max.z && b.min.z <= a.max.z;
+    }
+}
+
 std::size_t broadphase_cell_hasher::operator()(const broadphase_cell_key &aKey) const noexcept {
     // GOLDEN_RATIO_64BIT: 2^64 / φ, used in many hash combiners to scatter values.
     static constexpr std::uint64_t GOLDEN_RATIO_64BIT(0x9e3779b97f4a7c15ull);
@@ -77,7 +85,7 @@ void impl_broadphase_grid::reserve(const std::size_t aBodyCount) {
 
 void impl_broadphase_grid::insert_unbounded(const impl_collider_ptr_type &aBody, const body_kind aKind,
     const bool aIsStatic) {
-    m_Unbinned.push_back(entry{aBody, aBody->id(), aKind, aIsStatic});
+    m_Unbinned.push_back(entry{aBody, aBody.get(), aBody->id(), aKind, aIsStatic});
 }
 
 void impl_broadphase_grid::sort(std::vector<neighbour> &aNeighbours) {
@@ -89,8 +97,8 @@ void impl_broadphase_grid::sort(std::vector<neighbour> &aNeighbours) {
         });
 }
 
-void impl_broadphase_grid::take_live(const std::vector<entry> &aEntries, const impl_collider *aExclude,
-    collider_id_set &aSeen, std::vector<neighbour> &aOut) const {
+void impl_broadphase_grid::take_live(const std::vector<entry> &aEntries, const impl_collider::broadphase_bounds *aBounds,
+    const impl_collider *aExclude, collider_id_set &aSeen, std::vector<neighbour> &aOut) const {
     for (const auto &entry : aEntries) {
         auto pLive = entry.ptr.lock();
 
@@ -100,6 +108,9 @@ void impl_broadphase_grid::take_live(const std::vector<entry> &aEntries, const i
         }
 
         if (pLive.get() == aExclude) continue;
+
+        if (aBounds && !overlaps(pLive->broad_phase_bounds(), *aBounds)) continue;
+
         if (!aSeen.insert(entry.id)) continue;
 
         aOut.push_back(neighbour{std::move(pLive), entry.kind, entry.is_static});
@@ -145,7 +156,7 @@ void impl_broadphase_grid::insert(const impl_collider_ptr_type &aBody, const imp
     for (int z = min.z; z <= max.z; ++z)
     for (int y = min.y; y <= max.y; ++y)
     for (int x = min.x; x <= max.x; ++x) {
-        m_Cells[cell_key{x, y, z}].push_back(entry{aBody, aBody->id(), aKind, aIsStatic});
+        m_Cells[cell_key{x, y, z}].push_back(entry{aBody, aBody.get(), aBody->id(), aKind, aIsStatic});
     }
 }
 
@@ -165,7 +176,7 @@ void impl_broadphase_grid::gather_overlapping_excluding(const impl_collider::bro
     const impl_collider *aExclude, collider_id_set &aSeen,
     std::vector<neighbour> &aOutNeighbours) const {
     // Unbinned bodies are near everything by definition, so they join every result.
-    take_live(m_Unbinned, aExclude, aSeen, aOutNeighbours);
+    take_live(m_Unbinned, &aBounds, aExclude, aSeen, aOutNeighbours);
 
     const auto max = cell_coord(aBounds.max);
     const auto min = cell_coord(aBounds.min);
@@ -175,6 +186,6 @@ void impl_broadphase_grid::gather_overlapping_excluding(const impl_collider::bro
     for (int x = min.x; x <= max.x; ++x) {
         const auto it = m_Cells.find(cell_key{x, y, z});
         if (it == m_Cells.end()) continue;
-        take_live(it->second, aExclude, aSeen, aOutNeighbours);
+        take_live(it->second, nullptr, aExclude, aSeen, aOutNeighbours);
     }
 }

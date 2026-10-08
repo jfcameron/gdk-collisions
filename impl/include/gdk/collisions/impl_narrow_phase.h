@@ -3,6 +3,8 @@
 #ifndef GDK_COLLISIONS_IMPL_NARROW_PHASE_H
 #define GDK_COLLISIONS_IMPL_NARROW_PHASE_H
 
+#include <gdk/collisions/parallelepiped.h>
+#include <gdk/collisions/upright_cylinder.h>
 #include <gdk/collisions/types.h>
 #include <gdk/collisions/impl_collision_policy.h>
 #include <gdk/collisions/impl_shape.h>
@@ -44,8 +46,33 @@ namespace gdk::collisions {
         const std::vector<collider_part> &aOtherParts, const shape_kinematics &aOther,
         const delta_time_type aDeltaTime, const impl_collision_policy &aPolicy);
 
+    /// \brief where a ray first meets a collider's parts
+    [[nodiscard]] std::optional<overlap> narrow_phase_ray_parts(const vector3_type &aOrigin, const vector3_type &aDirection,
+        floating_point_type aMaxDistance, const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+
+    /// \brief whether any of a collider's parts reaches into an upright cylinder
+    [[nodiscard]] bool narrow_phase_cylinder_parts(const upright_cylinder &aCylinder,
+        const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+
+    /// \brief whether any of a collider's parts reaches into a parallelepiped
+    [[nodiscard]] bool narrow_phase_parallelepiped_parts(const parallelepiped &aVolume,
+        const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+
+    //! the least and the most corner of a parallelepiped's box in the world
+    [[nodiscard]] vector3_type parallelepiped_low(const parallelepiped &aVolume);
+    [[nodiscard]] vector3_type parallelepiped_high(const parallelepiped &aVolume);
+
     /// \brief gets the half extents of a shape's world-space axis aligned bounds
     [[nodiscard]] vector3_type shape_extents(const shape_type &aShape,
+        const quaternion_type &aOrientation = quaternion_type::identity);
+
+    //! **a shape's world-space axis aligned bounds**, from where it is: its least corner and its most
+    struct shape_offsets final {
+        vector3_type low;
+        vector3_type high;
+    };
+
+    [[nodiscard]] shape_offsets shape_bounds(const shape_type &aShape,
         const quaternion_type &aOrientation = quaternion_type::identity);
 }
 

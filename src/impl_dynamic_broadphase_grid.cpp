@@ -62,7 +62,16 @@ void impl_dynamic_broadphase_grid::add(const impl_collider_ptr_type &aBody,
         && std::isfinite(aBounds.min.z) && std::isfinite(aBounds.max.x)
         && std::isfinite(aBounds.max.y) && std::isfinite(aBounds.max.z);
 
+    record.reach = aBounds;
+
     if (finite) {
+        const auto standing = aBody->broad_phase_bounds();
+        const auto ahead = vector3_type::max(aBounds.max - standing.max, standing.min - aBounds.min);
+        const auto grown = ahead.length();
+
+        record.reach.min = aBounds.min - vector3_type{grown, grown, grown};
+        record.reach.max = aBounds.max + vector3_type{grown, grown, grown};
+
         record.min = cell_coord(aBounds.min);
         record.max = cell_coord(aBounds.max);
 
@@ -234,6 +243,11 @@ void impl_dynamic_broadphase_grid::gather_overlapping_excluding(
     const auto append = [&](const std::uint32_t aBody) {
         const auto &record = m_Bodies[aBody];
         if (record.ptr.get() == aExclude) return;
+
+        if (!(record.reach.min.x <= aBounds.max.x && aBounds.min.x <= record.reach.max.x
+            && record.reach.min.y <= aBounds.max.y && aBounds.min.y <= record.reach.max.y
+            && record.reach.min.z <= aBounds.max.z && aBounds.min.z <= record.reach.max.z)) return;
+
         if (!aSeen.insert(record.id)) return;
 
         aOutNeighbours.push_back(neighbour{record.ptr, record.kind, false});

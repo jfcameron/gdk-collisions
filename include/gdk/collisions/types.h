@@ -5,6 +5,7 @@
 
 #include <gdk/math.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -23,6 +24,12 @@ namespace gdk::collisions {
     struct overlap;
     struct contact;
     class sphere_collider;
+
+    using collision_layers_type = std::uint32_t;
+
+    inline constexpr collision_layers_type DEFAULT_COLLISION_LAYER = 1;
+
+    inline constexpr collision_layers_type ALL_COLLISION_LAYERS = ~collision_layers_type{0};
 
     using delta_time_type = float;
     using floating_point_type = float; //TODO: possibly too broad? component_type? scalar_type?

@@ -8,6 +8,8 @@
 #include <gdk/collisions/types.h>
 #include <gdk/collisions/contact.h>
 #include <gdk/collisions/raycast_hit.h>
+#include <gdk/collisions/parallelepiped.h>
+#include <gdk/collisions/upright_cylinder.h>
 #include <gdk/collisions/rigid_transform.h>
 
 #include <functional>
@@ -42,6 +44,17 @@ namespace gdk::collisions {
             const vector3_type &aDirection,
             const floating_point_type aMaxDistance) const {
             return do_raycast(aOrigin, aDirection, aMaxDistance, nullptr, true);
+        }
+
+        /// \brief whether any immovable collider reaches into aVolume
+        [[nodiscard]] bool overlaps_static(const upright_cylinder &aVolume) const {
+            return do_overlaps_static(aVolume);
+        }
+
+        /// \overload
+        /// \brief a box that may lean: eg the room between two points
+        [[nodiscard]] bool overlaps_static(const parallelepiped &aVolume) const {
+            return do_overlaps_static(aVolume);
         }
 
         /// \brief every solid contact detected during the most recent step.
@@ -243,6 +256,9 @@ namespace gdk::collisions {
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
             const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const = 0;
+
+        [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const = 0;
+        [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const = 0;
 
         [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_collider(const response_handler &) = 0;
         [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_trigger() = 0;

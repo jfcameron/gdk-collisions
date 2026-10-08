@@ -3070,3 +3070,664 @@ TEST_CASE("gdk::scene raycast finds a flat mesh floor at every point, far from t
         REQUIRE(f.scene->raycast_static({x, 0x1.39999ap+2f, z}, {0, -1, 0}, 1.8f).has_value());
     }
 }
+
+TEST_CASE("gdk::collider is on the default layer, and collides with every layer, until told otherwise",
+    "[gdk::collision][layers]")
+{
+    fixture f;
+    const auto pSphere = f.scene->make_sphere_collider();
+
+    REQUIRE(pSphere->collision_layers() == DEFAULT_COLLISION_LAYER);
+    REQUIRE(pSphere->collides_with() == ALL_COLLISION_LAYERS);
+
+    pSphere->set_collision_layers(4, 1 | 2);
+
+    REQUIRE(pSphere->collision_layers() == 4u);
+    REQUIRE(pSphere->collides_with() == 3u);
+}
+
+TEST_CASE("gdk::scene lets two colliders whose layers do not meet pass through each other, saying nothing",
+    "[gdk::collision][layers]")
+{
+    fixture f;
+    const auto pA = f.scene->make_sphere_collider();
+    const auto pB = f.scene->make_sphere_collider();
+    pA->set_position({-2, 0, 0});
+    pB->set_position({+2, 0, 0});
+
+    SECTION("**one that does not collide with the other's layer** is enough: a meeting needs both")
+    {
+        pA->set_collision_layers(2, 2);
+    }
+
+    SECTION("**and the other way about**")
+    {
+        pB->set_collision_layers(DEFAULT_COLLISION_LAYER, 2);
+    }
+
+    pA->add_velocity({+1, 0, 0});
+    pB->add_velocity({-1, 0, 0});
+    f.update(2.0f);
+
+    REQUIRE(pA->transform().translation().x == Approx(0.0f).margin(1e-2f));
+    REQUIRE(pB->transform().translation().x == Approx(0.0f).margin(1e-2f));
+    REQUIRE(f.collisions.empty());
+}
+
+TEST_CASE("gdk::scene stops a body that meets only the world on the world, and lets it through everything else",
+    "[gdk::collision][layers]")
+{
+    constexpr collision_layers_type CORPSES = 2, LIVING = 4;
+
+    fixture f;
+    const auto pGround = f.scene->make_static_plane_collider(matrix4x4_type::identity);
+
+    const auto pCorpse = f.scene->make_sphere_collider();
+    pCorpse->set_collision_layers(CORPSES, DEFAULT_COLLISION_LAYER);
+    pCorpse->set_position({0, 0.5f, 0});
+
+    const auto pLiving = f.scene->make_axis_aligned_box_collider();
+    pLiving->set_collision_layers(LIVING, ALL_COLLISION_LAYERS);
+    pLiving->set_position({-3, 0.5f, 0});
+
+    SECTION("**walked through**: the living body crosses where the corpse lies, and neither is moved")
+    {
+        for (int frame = 0; frame < 6; ++frame) {
+            pLiving->add_velocity({1, 0, 0});
+            f.update(1.0f);
+        }
+
+        REQUIRE(pLiving->transform().translation().x == Approx(3.0f).margin(1e-2f));
+        REQUIRE(pCorpse->transform().translation().x == Approx(0.0f).margin(1e-2f));
+    }
+
+    SECTION("**and held up by the ground**: pushed down into it, it stays on top")
+    {
+        pCorpse->add_velocity({0, -2, 0});
+        f.update(1.0f);
+
+        REQUIRE(pCorpse->transform().translation().y == Approx(0.5f).margin(1e-2f));
+        REQUIRE(f.count(event_type::enter) >= 1);
+    }
+
+    static_cast<void>(pGround);
+}
+
+TEST_CASE("gdk::scene sets off a trigger only for a body whose layers meet it", "[gdk::collision][layers]")
+{
+    fixture f;
+    matrix4x4_type identity;
+    const auto pVolume = f.scene->make_static_sphere_trigger(identity, 0.5f);
+    const auto pSphere = f.scene->make_sphere_collider();
+    pSphere->set_position({-2, 0, 0});
+
+    pSphere->set_collision_layers(DEFAULT_COLLISION_LAYER, 2);
+
+    for (int frame = 0; frame < 5; ++frame) {
+        pSphere->add_velocity({1, 0, 0});
+        f.update(1.0f);
+    }
+
+    REQUIRE(f.triggers.empty());
+}
+
+TEST_CASE("gdk::scene raycast meets a collider whatever its layers", "[gdk::collision][layers]")
+{
+    fixture f;
+    const auto pBox = f.scene->make_axis_aligned_box_collider();
+    pBox->set_collision_layers(2, 2);
+
+    const auto hit = f.scene->raycast({-10, 0, 0}, {1, 0, 0}, 20.0f);
+
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->collider == const_collider_ptr_type(pBox));
+}
+
+TEST_CASE("gdk::scene raycast answers exactly, shape by shape", "[gdk::collision][raycast]")
+{
+    matrix4x4_type identity;
+
+    SECTION("a box: the face it meets, its normal toward the ray, and from inside nought and the nearest face")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_axis_aligned_box_collider(identity, {0.5f, 1.0f, 0.5f}));
+
+        const auto hit = f.scene->raycast_static({0, 10, 0}, {0, -1, 0}, 20.0f);
+        REQUIRE(hit);
+        REQUIRE(hit->distance == Approx(9.0f).margin(1e-4f));
+        REQUIRE(hit->normal.y == Approx(1.0f));
+        REQUIRE(hit->point.y == Approx(1.0f).margin(1e-4f));
+
+        const auto inside = f.scene->raycast_static({0.4f, 0, 0}, {-1, 0, 0}, 20.0f);
+        REQUIRE(inside);
+        REQUIRE(inside->distance == Approx(0.0f));
+        REQUIRE(inside->normal.x == Approx(1.0f));
+
+        REQUIRE_FALSE(f.scene->raycast_static({0.6f, 10, 0}, {0, -1, 0}, 20.0f));
+        REQUIRE_FALSE(f.scene->raycast_static({0, 10, 0}, {0, -1, 0}, 8.5f));
+    }
+
+    SECTION("an oriented box, turned a quarter about y: met where its turned face is")
+    {
+        fixture f;
+        matrix4x4_type turned;
+        quaternion_type quarter;
+        quarter.set_from_euler({0, 3.14159265f / 2, 0});
+        turned.set_rotation(quarter);
+        const auto pKept = (f.scene->make_static_obb_collider(turned, {2.0f, 0.5f, 0.5f}));
+
+        const auto alongZ = f.scene->raycast_static({0, 0, -10}, {0, 0, 1}, 20.0f);
+        REQUIRE(alongZ);
+        REQUIRE(alongZ->distance == Approx(8.0f).margin(1e-3f));
+        REQUIRE(alongZ->normal.z == Approx(-1.0f).margin(1e-4f));
+
+        const auto alongX = f.scene->raycast_static({-10, 0, 0}, {1, 0, 0}, 20.0f);
+        REQUIRE(alongX);
+        REQUIRE(alongX->distance == Approx(9.5f).margin(1e-3f));
+    }
+
+    SECTION("a sphere, and from inside it")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_sphere_collider(identity, 1.0f));
+
+        const auto hit = f.scene->raycast_static({0, 0, -5}, {0, 0, 1}, 20.0f);
+        REQUIRE(hit);
+        REQUIRE(hit->distance == Approx(4.0f).margin(1e-4f));
+        REQUIRE(hit->normal.z == Approx(-1.0f).margin(1e-4f));
+
+        REQUIRE(f.scene->raycast_static({0, 0.5f, 0}, {1, 0, 0}, 20.0f)->distance == Approx(0.0f));
+    }
+
+    SECTION("a capsule: its side, and its round end from above")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_capsule_collider(identity, 0.5f, 1.0f));
+
+        const auto side = f.scene->raycast_static({-10, 0.5f, 0}, {1, 0, 0}, 20.0f);
+        REQUIRE(side);
+        REQUIRE(side->distance == Approx(9.5f).margin(1e-4f));
+        REQUIRE(side->normal.x == Approx(-1.0f).margin(1e-4f));
+
+        const auto top = f.scene->raycast_static({0, 10, 0}, {0, -1, 0}, 20.0f);
+        REQUIRE(top);
+        REQUIRE(top->point.y == Approx(1.5f).margin(1e-4f));
+        REQUIRE(top->normal.y == Approx(1.0f).margin(1e-4f));
+    }
+
+    SECTION("a mesh: met from either side, and down the seam between its two triangles")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_mesh_collider(identity, make_quad_mesh(5.0f)));
+
+        const auto above = f.scene->raycast_static({1, 3, 2}, {0, -1, 0}, 20.0f);
+        REQUIRE(above);
+        REQUIRE(above->distance == Approx(3.0f).margin(1e-4f));
+        REQUIRE(above->normal.y == Approx(1.0f).margin(1e-4f));
+
+        const auto below = f.scene->raycast_static({1, -3, 2}, {0, 1, 0}, 20.0f);
+        REQUIRE(below);
+        REQUIRE(below->normal.y == Approx(-1.0f).margin(1e-4f));
+
+        for (const float along : {-4.0f, -1.3f, 0.0f, 2.7f, 4.9f}) {
+            INFO(along);
+
+            const auto seam = f.scene->raycast_static({along, 2, along}, {0, -1, 0}, 20.0f);
+            REQUIRE(seam);
+            REQUIRE(seam->distance == Approx(2.0f).margin(1e-4f));
+        }
+    }
+
+    SECTION("a heightfield, from above")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_heightfield_collider(identity,
+            make_terrain(5, 5, [](std::size_t aColumn, std::size_t) { return static_cast<floating_point_type>(aColumn) * 0.5f; })));
+
+        const auto hit = f.scene->raycast_static({0.0f, 10, 0.5f}, {0, -1, 0}, 20.0f);
+        REQUIRE(hit);
+        REQUIRE(hit->point.y == Approx(1.0f).margin(1e-3f));
+        REQUIRE(hit->normal.y > 0.8f);
+        REQUIRE(hit->normal.x < 0.0f);
+    }
+
+    SECTION("a plane: the ground under it, so from below it is begun inside")
+    {
+        fixture f;
+        const auto pKept = (f.scene->make_static_plane_collider(identity));
+
+        REQUIRE(f.scene->raycast_static({0, -1, 0}, {1, 0, 0}, 20.0f)->distance == Approx(0.0f));
+        REQUIRE_FALSE(f.scene->raycast_static({0, 1, 0}, {1, 0, 0}, 20.0f));
+    }
+}
+
+TEST_CASE("gdk::scene overlaps_static answers for an upright cylinder, shape by shape", "[gdk::collision][overlap]")
+{
+    matrix4x4_type identity;
+
+    const auto room_at = [](const floating_point_type aX, const floating_point_type aZ) {
+        return upright_cylinder{{aX, 1.0f, aZ}, 1.0f, 0.5f};
+    };
+
+
+    SECTION("a box: in where it reaches, out past its radius, out exactly touching, in when wholly inside it")
+    {
+        fixture f;
+        matrix4x4_type at;
+        at.set_translation({0, 1.5f, 0});
+        const auto pKept = f.scene->make_static_axis_aligned_box_collider(at, {0.5f, 1.5f, 0.5f});
+
+        REQUIRE(f.scene->overlaps_static(room_at(0.9f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(1.1f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(1.0f, 0)));
+        REQUIRE(f.scene->overlaps_static({{0, 1, 0}, 0.5f, 0.1f}));
+
+        REQUIRE(f.scene->overlaps_static(room_at(0.8f, 0.8f)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0.9f, 0.9f)));
+
+        REQUIRE_FALSE(f.scene->overlaps_static({{0, 3, 0}, 1.0f, 0.5f}));
+        REQUIRE(f.scene->overlaps_static({{0, 2.99f, 0}, 1.0f, 0.5f}));
+    }
+
+    SECTION("an oriented box turned an eighth: its corner, now along x, reaches further")
+    {
+        fixture f;
+        matrix4x4_type turned;
+        quaternion_type eighth;
+        eighth.set_from_euler({0, 3.14159265f / 4, 0});
+        turned.set_rotation(eighth);
+        turned.set_translation({0, 1.5f, 0});
+        const auto pKept = f.scene->make_static_obb_collider(turned, {0.5f, 1.5f, 0.5f});
+
+        REQUIRE(f.scene->overlaps_static(room_at(1.15f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(1.25f, 0)));
+        REQUIRE(f.scene->overlaps_static({{0, 1, 0}, 0.5f, 0.1f}));
+    }
+
+    SECTION("a sphere and a capsule: within the sum of the radii, and not")
+    {
+        fixture f;
+        matrix4x4_type at;
+        at.set_translation({0, 1.5f, 0});
+        const auto pSphere = f.scene->make_static_sphere_collider(at, 0.5f);
+
+        REQUIRE(f.scene->overlaps_static(room_at(0.9f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(1.1f, 0)));
+
+        fixture g;
+        matrix4x4_type lying;
+        quaternion_type quarter;
+        quarter.set_from_euler({0, 0, 3.14159265f / 2});
+        lying.set_rotation(quarter);
+        lying.set_translation({0, 1.5f, 3});
+        const auto pCapsule = g.scene->make_static_capsule_collider(lying, 0.5f, 2.0f);
+
+        REQUIRE(g.scene->overlaps_static(room_at(1.5f, 2.1f)));
+        REQUIRE_FALSE(g.scene->overlaps_static(room_at(1.5f, 1.9f)));
+        REQUIRE(g.scene->overlaps_static(room_at(2.9f, 3)));
+        REQUIRE_FALSE(g.scene->overlaps_static(room_at(3.1f, 3)));
+    }
+
+    SECTION("a plane: under the ground is in it, over it is not, and resting on it touches")
+    {
+        fixture f;
+        const auto pKept = f.scene->make_static_plane_collider(identity);
+
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static({{0, 0, 0}, 1.0f, 0.5f}));
+        REQUIRE(f.scene->overlaps_static({{0, -0.1f, 0}, 1.0f, 0.5f}));
+    }
+
+    SECTION("a mesh: a wall seen edge on is in where its edge comes within the radius; a floor flush is not")
+    {
+        fixture f;
+        const auto pWall = f.scene->make_static_mesh_collider(identity, impl_mesh_data::make(
+            {{1, 0, -2}, {1, 0, 2}, {1, 3, 2}, {1, 3, -2}}, {0, 1, 2, 0, 2, 3}));
+
+        REQUIRE(f.scene->overlaps_static(room_at(0.6f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0.4f, 0)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0.5f, 0)));
+        REQUIRE(f.scene->overlaps_static(room_at(0.8f, 2.3f)));
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0.8f, 2.6f)));
+
+        fixture g;
+        const auto pFloor = g.scene->make_static_mesh_collider(identity, impl_mesh_data::make(
+            {{-5, 1, -5}, {5, 1, -5}, {5, 1, 5}, {-5, 1, 5}}, {0, 1, 2, 0, 2, 3}));
+
+        REQUIRE_FALSE(g.scene->overlaps_static(room_at(0, 0)));
+        REQUIRE(g.scene->overlaps_static({{0, 0.9f, 0}, 1.0f, 0.5f}));
+        REQUIRE(g.scene->overlaps_static({{1, 0.5f, -2}, 1.0f, 0.1f}));
+    }
+
+    SECTION("a heightfield: a hill rising into it, and the same hill moved away")
+    {
+        fixture f;
+        std::vector<floating_point_type> heights(25, 0.0f);
+        heights[12] = 2.0f;
+        const auto pHill = f.scene->make_static_heightfield_collider(identity, impl_heightfield_data::make(5, 5, heights));
+
+        REQUIRE(f.scene->overlaps_static({{0, 1.5f, 0}, 1.0f, 0.2f}));
+        REQUIRE_FALSE(f.scene->overlaps_static({{0, 2.0f, 0}, 1.0f, 0.2f}));
+        REQUIRE_FALSE(f.scene->overlaps_static({{1.8f, 0.5f, 1.8f}, 1.0f, 0.1f}));
+    }
+
+    SECTION("nothing there, and nothing of a volume")
+    {
+        fixture f;
+
+        REQUIRE_FALSE(f.scene->overlaps_static(room_at(0, 0)));
+
+        matrix4x4_type at;
+        at.set_translation({0, 1.5f, 0});
+        const auto pKept = f.scene->make_static_axis_aligned_box_collider(at, {0.5f, 1.5f, 0.5f});
+
+        REQUIRE_FALSE(f.scene->overlaps_static({{0, 1, 0}, 0.0f, 0.5f}));
+        REQUIRE_FALSE(f.scene->overlaps_static({{0, 1, 0}, 1.0f, 0.0f}));
+    }
+}
+
+TEST_CASE("gdk::scene overlaps_static catches whatever rays round the same cylinder catch", "[gdk::collision][overlap]")
+{
+    fixture f;
+    std::vector<const_collider_ptr_type> kept;
+
+    std::uint32_t state = 20261005u;
+    const auto next = [&state]() {
+        state = state * 1664525u + 1013904223u;
+
+        return static_cast<floating_point_type>(state >> 8) / static_cast<floating_point_type>(1u << 24);
+    };
+
+    for (int i = 0; i < 40; ++i) {
+        matrix4x4_type at;
+        at.set_translation({next() * 20 - 10, next() * 3, next() * 20 - 10});
+        kept.push_back(f.scene->make_static_axis_aligned_box_collider(at, {0.1f + next() * 0.6f, 0.1f + next() * 0.6f,
+            0.1f + next() * 0.6f}));
+    }
+
+    for (int i = 0; i < 40; ++i) {
+        const vector3_type corner{next() * 20 - 10, next() * 3, next() * 20 - 10};
+        const auto spread = [&] { return vector3_type{next() * 2 - 1, next() * 2 - 1, next() * 2 - 1}; };
+        kept.push_back(f.scene->make_static_mesh_collider(matrix4x4_type(), impl_mesh_data::make(
+            {corner, corner + spread(), corner + spread()}, {0, 1, 2})));
+    }
+
+    constexpr floating_point_type RADIUS = 0.45f;
+    std::size_t rayCaught = 0, volumeCaught = 0, missed = 0;
+
+    for (int i = 0; i < 4000; ++i) {
+        const vector3_type base{next() * 20 - 10, next() * 2.5f, next() * 20 - 10};
+
+        bool rays = false;
+
+        for (const floating_point_type up : {0.01f, 0.4f, 0.79f})
+            for (int each = 0; each < 8 && !rays; ++each) {
+                const auto turn = static_cast<floating_point_type>(each) * 3.14159265f / 4;
+
+                rays = static_cast<bool>(f.scene->raycast_static({base.x, base.y + up, base.z},
+                    {std::cos(turn), 0, std::sin(turn)}, RADIUS * 0.99f));
+            }
+
+        const bool volume = f.scene->overlaps_static({base, 0.8f, RADIUS});
+
+        if (rays) ++rayCaught;
+        if (volume) ++volumeCaught;
+        if (rays && !volume) ++missed;
+    }
+
+    INFO("rays caught " << rayCaught << ", the volume " << volumeCaught);
+
+    REQUIRE(rayCaught > 200);
+    REQUIRE(missed == 0);
+    REQUIRE(volumeCaught > rayCaught);
+}
+
+TEST_CASE("gdk::scene finds a static made outside an update at once, and one made inside it too", "[gdk::collision][raycast]")
+{
+    matrix4x4_type at;
+    at.set_translation({5, 0.5f, 0});
+
+    SECTION("made before any update: a ray and a volume find it straight away")
+    {
+        fixture f;
+        const auto pKept = f.scene->make_static_axis_aligned_box_collider(at, {0.5f, 0.5f, 0.5f});
+
+        REQUIRE(f.scene->raycast_static({5, 10, 0}, {0, -1, 0}, 20.0f));
+        REQUIRE(f.scene->overlaps_static({{5, 0, 0}, 1.0f, 0.2f}));
+    }
+
+    SECTION("made by a response, during an update: found after it, and after the next")
+    {
+        fixture f;
+        matrix4x4_type floor;
+        floor.set_translation({0, -0.5f, 0});
+        const auto pFloor = f.scene->make_static_axis_aligned_box_collider(floor, {10, 0.5f, 10});
+
+        const_box_collider_ptr_type pMade;
+        auto &scene = *f.scene;
+
+        auto pBall = f.scene->make_sphere_collider([&](collider &, const contact_context &) {
+            if (!pMade) pMade = scene.make_static_axis_aligned_box_collider(at, {0.5f, 0.5f, 0.5f});
+
+            return vector3_type{};
+        });
+        pBall->set_position({0, 0.6f, 0});
+
+        for (int frame = 0; frame < 10 && !pMade; ++frame) {
+            pBall->add_velocity({0, -3, 0});
+            f.update(1.0f / 30.0f);
+        }
+
+        REQUIRE(pMade);
+        REQUIRE(f.scene->raycast_static({5, 10, 0}, {0, -1, 0}, 20.0f));
+        REQUIRE(f.scene->overlaps_static({{5, 0, 0}, 1.0f, 0.2f}));
+
+        f.update(1.0f / 30.0f);
+
+        REQUIRE(f.scene->raycast_static({5, 10, 0}, {0, -1, 0}, 20.0f));
+        REQUIRE(f.scene->overlaps_static({{5, 0, 0}, 1.0f, 0.2f}));
+    }
+}
+
+TEST_CASE("gdk::scene overlaps_static answers for a box that leans, shape by shape", "[gdk::collision][overlap]")
+{
+    matrix4x4_type identity;
+
+    const parallelepiped level{{0, 1, -0.5f}, {vector3_type{4, 0, 0}, vector3_type{0, 0, 1}, vector3_type{0, 1, 0}}};
+    const parallelepiped rising{{0, 1, -0.5f}, {vector3_type{4, 1, 0}, vector3_type{0, 0, 1}, vector3_type{0, 1, 0}}};
+
+    SECTION("a box: in where it stands in the way, out beside it, out exactly touching, in when wholly inside it")
+    {
+        fixture f;
+        matrix4x4_type at;
+        at.set_translation({2, 1.5f, 1.2f});
+        const auto pPost = f.scene->make_static_axis_aligned_box_collider(at, {0.25f, 1.5f, 0.25f});
+
+        REQUIRE_FALSE(f.scene->overlaps_static(level));
+
+        fixture g;
+        at.set_translation({2, 1.5f, 0.7f});
+        const auto pIn = g.scene->make_static_axis_aligned_box_collider(at, {0.25f, 1.5f, 0.25f});
+        REQUIRE(g.scene->overlaps_static(level));
+
+        fixture h;
+        at.set_translation({2, 1.5f, 0.75f});
+        const auto pTouching = h.scene->make_static_axis_aligned_box_collider(at, {0.25f, 1.5f, 0.25f});
+        REQUIRE_FALSE(h.scene->overlaps_static(level));
+
+        fixture k;
+        at.set_translation({2, 1.5f, 0});
+        const auto pAround = k.scene->make_static_axis_aligned_box_collider(at, {5, 5, 5});
+        REQUIRE(k.scene->overlaps_static(level));
+    }
+
+    SECTION("on a slope: a step that the level way would meet passes under the rising one, and a lintel over it meets it")
+    {
+        fixture f;
+        matrix4x4_type at;
+        at.set_translation({3.5f, 0.75f, 0});
+        const auto pLedge = f.scene->make_static_axis_aligned_box_collider(at, {0.5f, 0.75f, 2});
+
+        REQUIRE(f.scene->overlaps_static(level));
+        REQUIRE_FALSE(f.scene->overlaps_static(rising));
+
+        fixture g;
+        at.set_translation({3.5f, 2.7f, 0});
+        const auto pLintel = g.scene->make_static_axis_aligned_box_collider(at, {0.5f, 0.5f, 2});
+
+        REQUIRE_FALSE(g.scene->overlaps_static(level));
+        REQUIRE(g.scene->overlaps_static(rising));
+    }
+
+    SECTION("an oriented box, a sphere, a capsule and a plane")
+    {
+        fixture f;
+        matrix4x4_type turned;
+        quaternion_type eighth;
+        eighth.set_from_euler({0, 3.14159265f / 4, 0});
+        turned.set_rotation(eighth);
+        turned.set_translation({2, 1.5f, 0.8f});
+        const auto pTurned = f.scene->make_static_obb_collider(turned, {0.25f, 1.5f, 0.25f});
+        REQUIRE(f.scene->overlaps_static(level));
+
+        fixture g;
+        turned.set_translation({2, 1.5f, 0.9f});
+        const auto pClear = g.scene->make_static_obb_collider(turned, {0.25f, 1.5f, 0.25f});
+        REQUIRE_FALSE(g.scene->overlaps_static(level));
+
+        fixture s;
+        matrix4x4_type at;
+        at.set_translation({2, 1.5f, 0.9f});
+        const auto pSphere = s.scene->make_static_sphere_collider(at, 0.5f);
+        REQUIRE(s.scene->overlaps_static(level));
+        fixture s2;
+        at.set_translation({2, 1.5f, 1.1f});
+        const auto pFar = s2.scene->make_static_sphere_collider(at, 0.5f);
+        REQUIRE_FALSE(s2.scene->overlaps_static(level));
+
+        fixture c;
+        matrix4x4_type lying;
+        quaternion_type quarter;
+        quarter.set_from_euler({0, 0, 3.14159265f / 2});
+        lying.set_rotation(quarter);
+        lying.set_translation({4.6f, 1.5f, 0});
+        const auto pCapsule = c.scene->make_static_capsule_collider(lying, 0.5f, 2.0f);
+        REQUIRE(c.scene->overlaps_static(level));
+
+        fixture c2;
+        lying.set_translation({6.6f, 1.5f, 0});
+        const auto pPast = c2.scene->make_static_capsule_collider(lying, 0.5f, 2.0f);
+        REQUIRE_FALSE(c2.scene->overlaps_static(level));
+
+        fixture p;
+        const auto pPlane = p.scene->make_static_plane_collider(identity);
+        REQUIRE_FALSE(p.scene->overlaps_static(level));
+        REQUIRE(p.scene->overlaps_static(parallelepiped{{0, -0.1f, -0.5f},
+            {vector3_type{4, 0, 0}, vector3_type{0, 0, 1}, vector3_type{0, 1, 0}}}));
+    }
+
+    SECTION("a mesh: a wall across the way, and the same wall past its end")
+    {
+        fixture f;
+        const auto pWall = f.scene->make_static_mesh_collider(identity, impl_mesh_data::make(
+            {{3, 0, -2}, {3, 0, 2}, {3, 3, 2}, {3, 3, -2}}, {0, 1, 2, 0, 2, 3}));
+        REQUIRE(f.scene->overlaps_static(level));
+
+        fixture g;
+        const auto pPast = g.scene->make_static_mesh_collider(identity, impl_mesh_data::make(
+            {{4, 0, -2}, {4, 0, 2}, {4, 3, 2}, {4, 3, -2}}, {0, 1, 2, 0, 2, 3}));
+        REQUIRE_FALSE(g.scene->overlaps_static(level));
+
+        fixture h;
+        const auto pFloor = h.scene->make_static_mesh_collider(identity, impl_mesh_data::make(
+            {{-5, 1, -5}, {5, 1, -5}, {5, 1, 5}, {-5, 1, 5}}, {0, 1, 2, 0, 2, 3}));
+        REQUIRE_FALSE(h.scene->overlaps_static(level));
+    }
+
+    SECTION("a triangle just past an edge, which only the crossing of an edge of each tells apart from it")
+    {
+        fixture f;
+        const auto pPast = f.scene->make_static_mesh_collider(matrix4x4_type(), impl_mesh_data::make(
+            {{2, 3.1f, -0.5f}, {2, 0.1f, 2.5f}, {8, 4, 4}}, {0, 1, 2}));
+        REQUIRE_FALSE(f.scene->overlaps_static(level));
+
+        fixture g;
+        const auto pAcross = g.scene->make_static_mesh_collider(matrix4x4_type(), impl_mesh_data::make(
+            {{2, 2.9f, -0.5f}, {2, -0.1f, 2.5f}, {8, 3.8f, 4}}, {0, 1, 2}));
+        REQUIRE(g.scene->overlaps_static(level));
+    }
+
+    SECTION("flat, it holds nothing")
+    {
+        fixture f;
+        matrix4x4_type at;
+        at.set_translation({2, 1.5f, 0});
+        const auto pKept = f.scene->make_static_axis_aligned_box_collider(at, {5, 5, 5});
+
+        REQUIRE_FALSE(f.scene->overlaps_static(parallelepiped{{0, 1, 0}, {vector3_type{4, 0, 0}, vector3_type{8, 0, 0},
+            vector3_type{0, 1, 0}}}));
+    }
+}
+
+TEST_CASE("gdk::scene overlaps_static catches whatever rays through the same leaning box catch", "[gdk::collision][overlap]")
+{
+    fixture f;
+    std::vector<const_collider_ptr_type> kept;
+
+    std::uint32_t state = 20261006u;
+    const auto next = [&state]() {
+        state = state * 1664525u + 1013904223u;
+
+        return static_cast<floating_point_type>(state >> 8) / static_cast<floating_point_type>(1u << 24);
+    };
+
+    for (int i = 0; i < 40; ++i) {
+        matrix4x4_type at;
+        at.set_translation({next() * 20 - 10, next() * 3, next() * 20 - 10});
+        kept.push_back(f.scene->make_static_axis_aligned_box_collider(at, {0.1f + next() * 0.6f, 0.1f + next() * 0.6f,
+            0.1f + next() * 0.6f}));
+    }
+
+    for (int i = 0; i < 40; ++i) {
+        const vector3_type corner{next() * 20 - 10, next() * 3, next() * 20 - 10};
+        const auto spread = [&] { return vector3_type{next() * 2 - 1, next() * 2 - 1, next() * 2 - 1}; };
+        kept.push_back(f.scene->make_static_mesh_collider(matrix4x4_type(), impl_mesh_data::make(
+            {corner, corner + spread(), corner + spread()}, {0, 1, 2})));
+    }
+
+    std::size_t rayCaught = 0, volumeCaught = 0, missed = 0;
+
+    for (int i = 0; i < 4000; ++i) {
+        const vector3_type from{next() * 20 - 10, next() * 2.5f, next() * 20 - 10};
+        const vector3_type along{next() * 4 - 2, next() * 1 - 0.5f, next() * 4 - 2};
+        const auto flat = std::sqrt(along.x * along.x + along.z * along.z);
+
+        if (flat < 0.1f) continue;
+
+        const vector3_type side{-along.z / flat * 0.45f, 0, along.x / flat * 0.45f};
+        const parallelepiped way{from - side, {along, side * 2.0f, vector3_type{0, 0.6f, 0}}};
+
+        bool rays = false;
+
+        for (const floating_point_type up : {0.01f, 0.3f, 0.59f})
+            for (const floating_point_type off : {-0.99f, 0.0f, 0.99f}) {
+                if (rays) break;
+
+                const auto origin = from + side * off + vector3_type{0, up, 0} + along * 0.001f;
+
+                rays = static_cast<bool>(f.scene->raycast_static(origin, along, along.length() * 0.998f));
+            }
+
+        const bool volume = f.scene->overlaps_static(way);
+
+        if (rays) ++rayCaught;
+        if (volume) ++volumeCaught;
+        if (rays && !volume) ++missed;
+    }
+
+    INFO("rays caught " << rayCaught << ", the volume " << volumeCaught);
+
+    REQUIRE(rayCaught > 200);
+    REQUIRE(missed == 0);
+    REQUIRE(volumeCaught > rayCaught);
+}

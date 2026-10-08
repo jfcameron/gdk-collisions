@@ -106,6 +106,34 @@ namespace gdk::collisions {
         void gather_overlapping(const impl_collider::broadphase_bounds &aBounds,
             collider_id_set &aSeen, std::vector<neighbour> &aOutNeighbours) const;
 
+        template <typename visit_type>
+        void visit_overlapping(const impl_collider::broadphase_bounds &aBounds, collider_id_set &aSeen,
+            visit_type &&aVisit) const {
+            const auto visit = [&](const std::vector<entry> &aEntries) {
+                for (const auto &each : aEntries) {
+                    if (!aSeen.insert(each.id)) continue;
+
+                    if (each.ptr.expired()) {
+                        m_HasExpiredEntries.store(true, std::memory_order_relaxed);
+
+                        continue;
+                    }
+
+                    aVisit(*each.raw, each.kind, each.ptr);
+                }
+            };
+
+            visit(m_Unbinned);
+
+            const auto max = cell_coord(aBounds.max);
+            const auto min = cell_coord(aBounds.min);
+
+            for (int z = min.z; z <= max.z; ++z)
+            for (int y = min.y; y <= max.y; ++y)
+            for (int x = min.x; x <= max.x; ++x)
+                if (const auto it = m_Cells.find(cell_key{x, y, z}); it != m_Cells.end()) visit(it->second);
+        }
+
         /// \brief gather_overlapping but excluding one collider
         void gather_overlapping_excluding(const impl_collider::broadphase_bounds &aBounds,
             const impl_collider *aExclude, collider_id_set &aSeen,
@@ -124,12 +152,15 @@ namespace gdk::collisions {
 
         struct entry final {
             impl_collider_weak_ptr_type ptr;
+            const impl_collider *raw;
             collider_id_type id;
             body_kind kind;
             bool is_static;
         };
 
-        void take_live(const std::vector<entry> &aEntries, const impl_collider *aExclude,
+        //! \param aBounds where given, only what overlaps them is taken
+        void take_live(const std::vector<entry> &aEntries, const impl_collider::broadphase_bounds *aBounds,
+            const impl_collider *aExclude,
             collider_id_set &aSeen, std::vector<neighbour> &aOut) const;
 
         std::unordered_map<cell_key, std::vector<entry>, cell_hasher> m_Cells;
