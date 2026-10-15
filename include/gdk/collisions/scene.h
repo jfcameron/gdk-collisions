@@ -3,6 +3,7 @@
 #ifndef GDK_COLLISIONS_SCENE_H
 #define GDK_COLLISIONS_SCENE_H
 
+#include <cstdint>
 #include <gdk/collisions/events.h>
 #include <gdk/collisions/response_handler.h>
 #include <gdk/collisions/types.h>
@@ -29,21 +30,30 @@ namespace gdk::collisions {
         /// \brief hand this step's collision and trigger events to the observers.
         void process_events() { do_process_events(); }
 
+        struct statistics final {
+            std::uint64_t steps = 0;
+            std::uint64_t pairs_tested = 0;
+        };
+
+        [[nodiscard]] statistics take_statistics() { return do_take_statistics(); }
+
         /// \brief find the nearest collider along a ray.
         ///
         /// \param pIgnore a collider the ray goes through as if it were not there 
         [[nodiscard]] std::optional<raycast_hit> raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
             const floating_point_type aMaxDistance,
-            const collider *pIgnore = nullptr) const {
-            return do_raycast(aOrigin, aDirection, aMaxDistance, pIgnore, false);
+            const collider *pIgnore = nullptr,
+            const collision_layers_type aLayers = ALL_COLLISION_LAYERS) const {
+            return do_raycast(aOrigin, aDirection, aMaxDistance, pIgnore, false, aLayers);
         }
 
-        /// \brief the nearest immovable collider along a ray
+        /// \brief the nearest immovable collider along a ray, on any of aLayers 
         [[nodiscard]] std::optional<raycast_hit> raycast_static(const vector3_type &aOrigin,
             const vector3_type &aDirection,
-            const floating_point_type aMaxDistance) const {
-            return do_raycast(aOrigin, aDirection, aMaxDistance, nullptr, true);
+            const floating_point_type aMaxDistance,
+            const collision_layers_type aLayers = ALL_COLLISION_LAYERS) const {
+            return do_raycast(aOrigin, aDirection, aMaxDistance, nullptr, true, aLayers);
         }
 
         /// \brief whether any immovable collider reaches into aVolume
@@ -250,12 +260,15 @@ namespace gdk::collisions {
 
         virtual void do_process_events() = 0;
 
+        [[nodiscard]] virtual statistics do_take_statistics() = 0;
+
         [[nodiscard]] virtual std::vector<contact> do_contacts() const = 0;
         [[nodiscard]] virtual std::vector<contact> do_contacts_for(const collider &aCollider) const = 0;
 
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
-            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const = 0;
+            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly,
+            collision_layers_type aLayers) const = 0;
 
         [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const = 0;
         [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const = 0;

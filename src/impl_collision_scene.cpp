@@ -29,7 +29,6 @@
 using namespace gdk::collisions;
 
 namespace {
-    /// \brief lock every weak_ptr in aContainer, dropping those that have expired.
     template <typename weak_ptr_container_type>
     auto lock_and_prune(weak_ptr_container_type &aContainer) {
         using weak_ptr_type = typename weak_ptr_container_type::value_type;
@@ -58,7 +57,6 @@ namespace {
         }
     }
 
-    /// \brief narrow phase, dispatched by visiting both colliders' shapes.
     [[nodiscard]] inline std::optional<overlap> overlap_between(const impl_collider_ptr_type &aSubject,
         const impl_collider_ptr_type &aOther, const delta_time_type aDeltaTime,
         const impl_collision_policy &aPolicy) {
@@ -68,7 +66,6 @@ namespace {
             aDeltaTime, aPolicy);
     }
 
-    /// \brief push two overlapping colliders apart, returning the contact normal.
     [[nodiscard]] inline std::optional<vector3_type> resolve_overlap(const impl_collider_ptr_type &aSubject,
         const impl_collider_ptr_type &aOther, const overlap &aOverlap) {
         const auto normal = aOverlap.contact_normal;
@@ -92,16 +89,15 @@ namespace {
         return normal;
     }
 
-    /// \brief the buffers one parallel detection chunk works in.
     struct detect_scratch final {
         collider_id_set seen;
         std::vector<impl_broadphase_grid::neighbour> neighbours;
+
+        std::uint64_t pairsTested = 0;
     };
 
-    /// \brief the collider pairs already separated during the current advancement iteration.
     class resolved_pair_set final {
     public:
-        /// \brief forget everything, in constant time
         void clear() {
             ++m_Generation;
 
@@ -113,7 +109,6 @@ namespace {
             m_Count = 0;
         }
 
-        /// \brief record the unordered pair {aFirst, aSecond}. \return true if it was not present.
         bool insert(const collider_id_type aFirst, const collider_id_type aSecond) {
             if (m_Stamps.empty()) grow(64);
 
@@ -152,7 +147,6 @@ namespace {
             }
         }
 
-        /// \brief resize, carrying the current iteration's entries across.
         void grow(const std::size_t aCapacity) {
             std::vector<std::uint64_t> live;
             live.reserve(m_Count);
@@ -174,12 +168,9 @@ namespace {
         std::size_t m_Count = 0;
     };
 
-    /// \brief one dynamic body's state across the advancement iterations of a single step.
     struct body_advancement final {
-        /// \brief the part of the step this body has still to travel
         delta_time_type remaining_time = 0;
 
-        /// \brief false once this body can do nothing further this step
         bool active = false;
 
         floating_point_type earliest_blocking_toi = 0;
@@ -188,14 +179,10 @@ namespace {
 
         std::vector<impl_broadphase_grid::neighbour> trigger_hits;
 
-        /// \brief contacts that exist but are not closing: touching, or being left behind.
-        /// Separated and reported, but they never halt the body and are never offered to a handler.
         std::vector<std::pair<overlap, impl_collider_ptr_type>> resting_contacts;
 
-        /// \brief the surfaces this body has been redirected along so far during the step.
         clip_planes_type clip_planes;
 
-        /// \brief drop the handles, keeping the vectors' capacity for the next step.
         void release() {
             blocking_hit.reset();
             blocking_collider.reset();
@@ -205,8 +192,6 @@ namespace {
         }
     };
 
-    /// \brief the concrete scene. Defined here rather than in the header so that none of this
-    /// implementation's state is visible to consumers, who see only impl_collision_scene::make.
     class scene_implementation final : public impl_collision_scene {
     public:
         scene_implementation(observer_type aCollisionObserver,
@@ -215,6 +200,7 @@ namespace {
         : m_Events(std::move(aCollisionObserver), std::move(aTriggerOverlapObserver))
         , m_Dispatcher(std::move(aDispatcher))
         , m_DynamicGrid(aPolicy)
+        , m_MovableGrid(aPolicy)
         , m_StaticGrid(aPolicy)
         , m_Policy(aPolicy)
         {}
@@ -224,9 +210,16 @@ namespace {
         virtual void do_update(const delta_time_type aDeltaTime) override;
         virtual void do_process_events() override;
 
+        [[nodiscard]] virtual statistics do_take_statistics() override {
+            const auto out = m_Statistics;
+            m_Statistics = {};
+            return out;
+        }
+
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
             const vector3_type &aDirection,
-            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly) const override;
+            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly,
+            collision_layers_type aLayers) const override;
 
         [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const override;
         [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const override;
@@ -271,8 +264,6 @@ namespace {
     protected:
         void update_step(const delta_time_type aDeltaTime);
 
-        /// \brief ids are handed out per scene rather than from a global counter, so that two
-        /// scenes in the same process cannot perturb each other's ordering.
         [[nodiscard]] collider_id_type next_collider_id() { return m_NextColliderId++; }
 
         void register_static(const impl_collider_ptr_type &aBody, const impl_broadphase_grid::body_kind aKind) {
@@ -280,7 +271,6 @@ namespace {
             else m_StaticGrid.insert(aBody, aBody->broad_phase_bounds(), aKind, true);
         }
 
-        /// \brief move anything queued into the persistent grid.
         void flush_pending_statics() {
             for (auto &pending : m_PendingStatics)
                 if (const auto pBody = pending.first.lock())
@@ -307,6 +297,10 @@ namespace {
         resolved_pair_set m_ResolvedPairs;
 
         impl_dynamic_broadphase_grid m_DynamicGrid;
+
+        statistics m_Statistics;
+
+        impl_dynamic_broadphase_grid m_MovableGrid;
 
         std::vector<std::pair<impl_collider_weak_ptr_type, impl_broadphase_grid::body_kind>> m_PendingStatics;
 
@@ -589,11 +583,35 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     GDK_COLLISION_PROFILE_END(broadphase_rebuild_ms);
     GDK_COLLISION_PROFILE_BEGIN(kinematic_pass_ms);
 
+    if (!kinematicColliders.empty()) {
+        m_MovableGrid.clear();
+        m_MovableGrid.reserve(dynamicColliders.size() + dynamicTriggers.size());
+
+        for (auto &pCollider : dynamicColliders)
+            m_MovableGrid.add(pCollider, pCollider->broad_phase_swept_bounds(aDeltaTime), body_kind::collider);
+
+        for (auto &pTrigger : dynamicTriggers)
+            m_MovableGrid.add(pTrigger, pTrigger->broad_phase_swept_bounds(aDeltaTime), body_kind::trigger);
+
+        m_MovableGrid.build(SERIAL);
+    }
+
     for (auto &pKinematic : kinematicColliders) {
         std::vector<body_ref> neighbours;
-        gather(m_DetectScratch[0], *pKinematic, aDeltaTime, neighbours);
+        auto &seen = m_DetectScratch[0].seen;
+        seen.clear();
+
+        const auto bounds = pKinematic->broad_phase_swept_bounds(aDeltaTime);
+
+        m_StaticGrid.gather_overlapping_excluding(bounds, pKinematic.get(), seen, neighbours);
+        m_MovableGrid.gather_overlapping_excluding(bounds, pKinematic.get(), seen, neighbours);
+
+        std::erase_if(neighbours, [&](const body_ref &aNeighbour) { return !pKinematic->meets(*aNeighbour.ptr); });
+        impl_broadphase_grid::sort(neighbours);
 
         for (const auto &neighbour : neighbours) {
+            ++m_DetectScratch[0].pairsTested;
+
             const auto oHit = narrow_phase_overlap_parts(
                 pKinematic->parts(),
                 {pKinematic->position(), pKinematic->velocity(), pKinematic->rotation()},
@@ -665,10 +683,15 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
 
             GDK_COLLISION_PROFILE_BEGIN(narrow_phase_ms);
 
+            scratch.pairsTested += scratch.neighbours.size();
+
             for (auto &neighbour : scratch.neighbours) {
                 if (auto ov = overlap_between(pDynamicCollider, neighbour.ptr, state.remaining_time, m_Policy)) {
                     if (neighbour.kind == body_kind::collider) {
-                        if (!is_closing(*ov, pDynamicCollider->sweep_kinematics(),
+                        const bool ownClosing = pDynamicCollider->velocity().dot_product(ov->contact_normal)
+                            < -m_Policy.MIN_SWEPT_SPEED;
+
+                        if (!ownClosing || !is_closing(*ov, pDynamicCollider->sweep_kinematics(),
                             neighbour.ptr->sweep_kinematics(), m_Policy)) {
                             state.resting_contacts.emplace_back(*ov, neighbour.ptr);
                             continue;
@@ -797,6 +820,8 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
 
             gather(m_DetectScratch[0], *pDynamicTrigger, remainingTime, neighbours);
 
+            m_DetectScratch[0].pairsTested += neighbours.size();
+
             for (const auto &neighbour : neighbours) {
                 if (auto ov = overlap_between(pDynamicTrigger, neighbour.ptr, remainingTime, m_Policy)) {
                     if (ov->entry_time < earliestTOI - m_Policy.AXIS_ENTRY_EPSILON) {
@@ -841,12 +866,18 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
     clear_velocity_in_collection(dynamicTriggers);
 
     m_DynamicGrid.clear();
+    m_MovableGrid.clear();
     for (auto &scratch : m_DetectScratch) scratch.neighbours.clear();
+
+    ++m_Statistics.steps;
+
+    for (auto &scratch : m_DetectScratch) {
+        m_Statistics.pairs_tested += scratch.pairsTested;
+        scratch.pairsTested = 0;
+    }
 }
 
 namespace {
-    /// \brief turn the tracker's weakly-held records into what a caller is handed
-    /// \param aOnly if set, keep only contacts involving this collider.
     [[nodiscard]] std::vector<contact> collect_contacts(
         const impl_collision_event_tracker &aEvents, const collider *aOnly) {
         std::vector<contact> result;
@@ -890,7 +921,7 @@ std::vector<contact> scene_implementation::do_contacts_for(const collider &aColl
 
 std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &aOrigin,
     const vector3_type &aDirection, const floating_point_type aMaxDistance, const collider *const pIgnore,
-    const bool aStaticOnly) const {
+    const bool aStaticOnly, const collision_layers_type aLayers) const {
     const auto direction = aDirection.normal();
     if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
 
@@ -899,6 +930,8 @@ std::optional<raycast_hit> scene_implementation::do_raycast(const vector3_type &
 
     const auto consider = [&](const impl_collider &aCollider, const impl_collider_weak_ptr_type &aWeak) {
         if (pIgnore && static_cast<const collider *>(&aCollider) == pIgnore) return;
+
+        if ((aCollider.collision_layers() & aLayers) == 0) return;
 
         const auto result = narrow_phase_ray_parts(aOrigin, direction, nearest ? nearest->distance : aMaxDistance,
             aCollider.parts(), {aCollider.position(), aCollider.velocity(), aCollider.rotation()});
