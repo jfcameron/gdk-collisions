@@ -4,3 +4,6 @@
 [submodule "extern/gdk-math"]
 	path = extern/gdk-math
 	url = https://github.com/jfcameron/gdk-math.git
+[submodule "extern/jfc-dispatch"]
+	path = extern/jfc-dispatch
+	url = https://github.com/jfcameron/jfc-dispatch.git

@@ -2,6 +2,8 @@
 
 #include <gdk/collisions/impl_dynamic_broadphase_grid.h>
 
+#include <jfc/dispatch.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -187,8 +189,7 @@ void impl_dynamic_broadphase_grid::build(const task_dispatcher_type &aDispatcher
     for (;;) {
         next_generation();
 
-        if (aDispatcher) aDispatcher(chunkCount, [this](const std::size_t aChunk) { count_cells(aChunk); });
-        else count_cells(0);
+        jfc::dispatch::run(aDispatcher, chunkCount, [this](const std::size_t &aChunk) { count_cells(aChunk); });
 
         bool overflowed = false;
         for (const auto &chunk : m_Chunks) if (chunk.overflowed) { overflowed = true; break; }
@@ -213,8 +214,7 @@ void impl_dynamic_broadphase_grid::build(const task_dispatcher_type &aDispatcher
     m_PreviousCellCount = occupiedTotal;
     m_Entries.resize(offset);
 
-    if (aDispatcher) aDispatcher(chunkCount, [this](const std::size_t aChunk) { scatter(aChunk); });
-    else scatter(0);
+    jfc::dispatch::run(aDispatcher, chunkCount, [this](const std::size_t &aChunk) { scatter(aChunk); });
 }
 
 void impl_dynamic_broadphase_grid::scatter(const std::size_t aChunkIndex) {

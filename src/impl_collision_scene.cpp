@@ -17,6 +17,8 @@
 #include <gdk/collisions/impl_sphere_collider.h>
 #include <gdk/collisions/overlap.h>
 
+#include <jfc/dispatch.h>
+
 #include <algorithm>
 #include <limits>
 #include <functional>
@@ -718,8 +720,7 @@ void scene_implementation::update_step(const delta_time_type aDeltaTime) {
         for (const auto &state : m_Advancement) if (state.active) { anyActive = true; break; }
         if (!anyActive) break;
 
-        if (dispatcher) dispatcher(chunkCount, detect_chunk);
-        else detect_chunk(0);
+        jfc::dispatch::run(dispatcher, chunkCount, detect_chunk);
 
         GDK_COLLISION_PROFILE_BEGIN(resolve_respond_ms);
 

@@ -6,6 +6,8 @@
 #include <gdk/math.h>
 
 #include <cstdint>
+#include <jfc/dispatch.h>
+
 #include <functional>
 #include <memory>
 
@@ -32,7 +34,7 @@ namespace gdk::collisions {
     inline constexpr collision_layers_type ALL_COLLISION_LAYERS = ~collision_layers_type{0};
 
     using delta_time_type = float;
-    using floating_point_type = float; //TODO: possibly too broad? component_type? scalar_type?
+    using floating_point_type = float; 
 
     using matrix4x4_type = matrix4x4<floating_point_type>;
     using quaternion_type = quaternion<floating_point_type>;
@@ -40,22 +42,9 @@ namespace gdk::collisions {
     using vector3_type = vector3<floating_point_type>;
     using vector4_type = vector4<floating_point_type>;
 
-    /// \brief a chunk of parallelizable work
-    using chunk_type = std::function<void(const std::size_t &aChunkIndex)>;
-    /// \brief how a caller lends the library its threads. This is optional. If you do not make use
-    /// of it, the library will simply work in a single threaded manner.
-    ///
-    /// **The library creates no threads and owns no queue.** It splits its parallelisable work into
-    /// `aChunkCount` independent chunks and asks the caller to run `aChunk(i)` for every `i` in
-    /// `[0, aChunkCount)`, on whatever threads the caller likes, returning only once all of them
-    /// have finished. Simple implementation example:
-    ///
-    /// \code
-    /// [](std::size_t aChunkCount, const gdk::collisions::chunk_type &aChunk) {
-    ///     for (std::size_t i = 0; i < aChunkCount; ++i) aChunk(i);
-    /// }
-    /// \endcode
-    using task_dispatcher_type = std::function<void(const std::size_t &aChunkCount, const chunk_type &aChunk)>;
+    using chunk_type = jfc::dispatch::chunk_type;
+
+    using task_dispatcher_type = jfc::dispatch::task_dispatcher_type;
 
     using box_collider_ptr_type = std::shared_ptr<box_collider>;
     using capsule_collider_ptr_type = std::shared_ptr<capsule_collider>;
