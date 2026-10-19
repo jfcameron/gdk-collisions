@@ -18,6 +18,7 @@
 #include <gdk/collisions/overlap.h>
 
 #include <jfc/dispatch.h>
+#include <jfc/hash.h>
 
 #include <algorithm>
 #include <limits>
@@ -125,10 +126,7 @@ namespace {
 
     private:
         [[nodiscard]] static std::size_t hash_of(const std::uint64_t aKey) {
-            auto x = aKey + 0x9e3779b97f4a7c15ull;
-            x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-            x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-            return static_cast<std::size_t>(x ^ (x >> 31));
+            return static_cast<std::size_t>(jfc::hash::mix64(aKey));
         }
 
         bool insert_key(const std::uint64_t aKey) {

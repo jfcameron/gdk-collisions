@@ -1,5 +1,7 @@
 // © Joseph Cameron - All Rights Reserved
 
+#include <jfc/hash.h>
+
 #include <iterator>
 #include <gdk/collisions/impl_broadphase_grid.h>
 
@@ -21,22 +23,7 @@ namespace {
 }
 
 std::size_t broadphase_cell_hasher::operator()(const broadphase_cell_key &aKey) const noexcept {
-    // GOLDEN_RATIO_64BIT: 2^64 / φ, used in many hash combiners to scatter values.
-    static constexpr std::uint64_t GOLDEN_RATIO_64BIT(0x9e3779b97f4a7c15ull);
-    // SPLITMIX_MUL1/2: avalanche multipliers from SplitMix64 (public domain).
-    static constexpr std::uint64_t SPLITMIX_MUL1_64BIT(0xbf58476d1ce4e5b9ull);
-    static constexpr std::uint64_t SPLITMIX_MUL2_64BIT(0x94d049bb133111ebull);
-    auto h = GOLDEN_RATIO_64BIT;
-    auto mix = [&](int v) {
-        std::uint64_t x = static_cast<std::uint64_t>(static_cast<std::uint32_t>(v));
-        x += GOLDEN_RATIO_64BIT;
-        x = (x ^ (x >> 30)) * SPLITMIX_MUL1_64BIT;
-        x = (x ^ (x >> 27)) * SPLITMIX_MUL2_64BIT;
-        x ^= (x >> 31);
-        h ^= x + GOLDEN_RATIO_64BIT + (h << 6) + (h >> 2);
-    };
-    mix(aKey.x); mix(aKey.y); mix(aKey.z);
-    return static_cast<std::size_t>(h);
+    return static_cast<std::size_t>(jfc::hash::values(aKey.x, aKey.y, aKey.z));
 }
 
 broadphase_cell_key gdk::collisions::broadphase_cell_coord(const impl_collision_policy &aPolicy,

@@ -7,3 +7,6 @@
 [submodule "extern/jfc-dispatch"]
 	path = extern/jfc-dispatch
 	url = https://github.com/jfcameron/jfc-dispatch.git
+[submodule "extern/jfc-hash"]
+	path = extern/jfc-hash
+	url = https://github.com/jfcameron/jfc-hash.git

@@ -32,6 +32,7 @@ set(JFC_BUILD_BENCH OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/gdk-math")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/jfc-dispatch")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/jfc-hash")
 
 set(JFC_BUILD_TESTS "${_jfc_outer_build_tests}" CACHE BOOL "" FORCE)
 set(JFC_BUILD_DOCS "${_jfc_outer_build_docs}" CACHE BOOL "" FORCE)
@@ -100,6 +101,8 @@ target_include_directories(gdkcollisions
 target_compile_features(gdkcollisions PUBLIC cxx_std_20)
 
 target_link_libraries(gdkcollisions PUBLIC gdkmath jfcdispatch)
+
+target_link_libraries(gdkcollisions PRIVATE jfchash)
 
 target_compile_options(gdkcollisions PRIVATE ${JFC_COLLISION_FP_FLAGS})
 
