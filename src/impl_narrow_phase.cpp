@@ -12,6 +12,7 @@
 #include <limits>
 #include <utility>
 #include <vector>
+#include <span>
 
 using namespace gdk::collisions;
 
@@ -38,7 +39,7 @@ namespace {
         vector3_type on_first;
         vector3_type on_second;
 
-        /// \brief set when on_first lies *inside* the other shape rather than outside it, which
+        /// \brief set when on_first lies inside the other shape rather than outside it
         bool inside = false;
     };
 
@@ -1478,8 +1479,8 @@ std::optional<overlap> gdk::collisions::narrow_phase_penetration(
 }
 
 std::optional<overlap> gdk::collisions::narrow_phase_overlap_parts(
-    const std::vector<collider_part> &aSubjectParts, const shape_kinematics &aSubject,
-    const std::vector<collider_part> &aOtherParts, const shape_kinematics &aOther,
+    std::span<const collider_part> aSubjectParts, const shape_kinematics &aSubject,
+    std::span<const collider_part> aOtherParts, const shape_kinematics &aOther,
     const delta_time_type aDeltaTime, const impl_collision_policy &aPolicy) {
     const auto world_of = [](const collider_part &aPart, const shape_kinematics &aCollider) {
         shape_kinematics kinematics;
@@ -1841,7 +1842,7 @@ namespace {
 }
 
 std::optional<overlap> gdk::collisions::narrow_phase_ray_parts(const vector3_type &aOrigin, const vector3_type &aDirection,
-    const floating_point_type aMaxDistance, const std::vector<collider_part> &aParts, const shape_kinematics &aCollider) {
+    const floating_point_type aMaxDistance, std::span<const collider_part> aParts, const shape_kinematics &aCollider) {
     std::optional<ray_hit> best;
 
     for (const auto &part : aParts) {
@@ -2105,7 +2106,7 @@ namespace {
     /// @}
 }
 
-bool gdk::collisions::narrow_phase_cylinder_parts(const upright_cylinder &aCylinder, const std::vector<collider_part> &aParts,
+bool gdk::collisions::narrow_phase_cylinder_parts(const upright_cylinder &aCylinder, std::span<const collider_part> aParts,
     const shape_kinematics &aCollider) {
     if (aCylinder.radius <= 0 || aCylinder.height <= 0) return false;
 
@@ -2357,7 +2358,7 @@ namespace {
 }
 
 bool gdk::collisions::narrow_phase_parallelepiped_parts(const parallelepiped &aVolume,
-    const std::vector<collider_part> &aParts, const shape_kinematics &aCollider) {
+    std::span<const collider_part> aParts, const shape_kinematics &aCollider) {
     const parallelepiped_frame volume(aVolume);
 
     if (volume.flat) return false;

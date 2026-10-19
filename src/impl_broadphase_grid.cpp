@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
+#include <span>
 
 using namespace gdk::collisions;
 
@@ -97,7 +98,7 @@ void impl_broadphase_grid::sort(std::vector<neighbour> &aNeighbours) {
         });
 }
 
-void impl_broadphase_grid::take_live(const std::vector<entry> &aEntries, const impl_collider::broadphase_bounds *aBounds,
+void impl_broadphase_grid::take_live(std::span<const entry> aEntries, const impl_collider::broadphase_bounds *aBounds,
     const impl_collider *aExclude, collider_id_set &aSeen, std::vector<neighbour> &aOut) const {
     for (const auto &entry : aEntries) {
         auto pLive = entry.ptr.lock();

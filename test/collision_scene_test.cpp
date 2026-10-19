@@ -25,6 +25,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <span>
 
 using namespace gdk::collisions;
 
@@ -1565,7 +1566,7 @@ TEST_CASE("gdk::scene lets a caller keep its own velocity across frames", "[gdk:
 
 TEST_CASE("gdk::scene settles under a held input from every direction", "[gdk::collision]")
 {
-    const auto settles = [](const std::vector<vector3_type> &aPath, const std::size_t aTail) {
+    const auto settles = [](std::span<const vector3_type> aPath, const std::size_t aTail) {
         const auto first = aPath.size() - aTail;
         floating_point_type walked = 0;
         for (auto i = first + 1; i < aPath.size(); ++i) walked += (aPath[i] - aPath[i - 1]).length();

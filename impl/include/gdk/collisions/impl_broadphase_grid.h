@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cstdint>
 #include <vector>
+#include <span>
 
 namespace gdk::collisions {
     /// \brief integer coordinates of one broadphase cell.
@@ -109,7 +110,7 @@ namespace gdk::collisions {
         template <typename visit_type>
         void visit_overlapping(const impl_collider::broadphase_bounds &aBounds, collider_id_set &aSeen,
             visit_type &&aVisit) const {
-            const auto visit = [&](const std::vector<entry> &aEntries) {
+            const auto visit = [&](std::span<const entry> aEntries) {
                 for (const auto &each : aEntries) {
                     if (!aSeen.insert(each.id)) continue;
 
@@ -159,7 +160,7 @@ namespace gdk::collisions {
         };
 
         //! \param aBounds where given, only what overlaps them is taken
-        void take_live(const std::vector<entry> &aEntries, const impl_collider::broadphase_bounds *aBounds,
+        void take_live(std::span<const entry> aEntries, const impl_collider::broadphase_bounds *aBounds,
             const impl_collider *aExclude,
             collider_id_set &aSeen, std::vector<neighbour> &aOut) const;
 

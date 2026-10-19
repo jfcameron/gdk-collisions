@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <span>
 
 namespace gdk::collisions {
     /// \brief triangle geometry plus a bounding volume hierarchy over it.
@@ -67,7 +68,7 @@ namespace gdk::collisions {
         /// \brief recursively build the subtree covering m_Order[aFirst, aFirst + aCount) and
         /// return its node index
         std::uint32_t build(const std::uint32_t aFirst, const std::uint32_t aCount,
-            const std::vector<vector3_type> &aCentroids);
+            std::span<const vector3_type> aCentroids);
 
         [[nodiscard]] bounds bounds_of(const std::uint32_t aTriangle) const;
 

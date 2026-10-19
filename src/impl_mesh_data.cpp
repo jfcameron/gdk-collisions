@@ -9,6 +9,7 @@
 #include <map>
 #include <numeric>
 #include <utility>
+#include <span>
 
 using namespace gdk::collisions;
 
@@ -150,7 +151,7 @@ const impl_mesh_data::bounds &impl_mesh_data::root_bounds() const {
 }
 
 std::uint32_t impl_mesh_data::build(const std::uint32_t aFirst, const std::uint32_t aCount,
-    const std::vector<vector3_type> &aCentroids) {
+    std::span<const vector3_type> aCentroids) {
     const auto self = static_cast<std::uint32_t>(m_Nodes.size());
     m_Nodes.push_back(node{});
 

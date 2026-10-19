@@ -14,6 +14,7 @@
 #include <numeric>
 #include <thread>
 #include <vector>
+#include <span>
 
 using namespace gdk::collisions;
 
@@ -58,8 +59,8 @@ namespace {
         return positions;
     }
 
-    [[nodiscard]] bool identical(const std::vector<vector3_type> &aFirst,
-        const std::vector<vector3_type> &aSecond) {
+    [[nodiscard]] bool identical(std::span<const vector3_type> aFirst,
+        std::span<const vector3_type> aSecond) {
         if (aFirst.size() != aSecond.size()) return false;
 
         for (std::size_t i = 0; i < aFirst.size(); ++i)
@@ -69,7 +70,7 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] bool moved(const std::vector<vector3_type> &aPositions) {
+    [[nodiscard]] bool moved(std::span<const vector3_type> aPositions) {
         return !aPositions.empty()
             && std::any_of(aPositions.begin(), aPositions.end(),
                 [](const vector3_type &aPosition) { return aPosition.x != 37.0f; });

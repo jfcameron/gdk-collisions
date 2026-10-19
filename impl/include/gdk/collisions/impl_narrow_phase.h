@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <vector>
+#include <span>
 
 namespace gdk::collisions {
     /// \brief the kinematic state a narrow-phase test needs about one participant
@@ -42,21 +43,21 @@ namespace gdk::collisions {
 
     /// \brief test two colliders' full geometry, part against part.
     [[nodiscard]] std::optional<overlap> narrow_phase_overlap_parts(
-        const std::vector<collider_part> &aSubjectParts, const shape_kinematics &aSubject,
-        const std::vector<collider_part> &aOtherParts, const shape_kinematics &aOther,
+        std::span<const collider_part> aSubjectParts, const shape_kinematics &aSubject,
+        std::span<const collider_part> aOtherParts, const shape_kinematics &aOther,
         const delta_time_type aDeltaTime, const impl_collision_policy &aPolicy);
 
     /// \brief where a ray first meets a collider's parts
     [[nodiscard]] std::optional<overlap> narrow_phase_ray_parts(const vector3_type &aOrigin, const vector3_type &aDirection,
-        floating_point_type aMaxDistance, const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+        floating_point_type aMaxDistance, std::span<const collider_part> aParts, const shape_kinematics &aCollider);
 
     /// \brief whether any of a collider's parts reaches into an upright cylinder
     [[nodiscard]] bool narrow_phase_cylinder_parts(const upright_cylinder &aCylinder,
-        const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+        std::span<const collider_part> aParts, const shape_kinematics &aCollider);
 
     /// \brief whether any of a collider's parts reaches into a parallelepiped
     [[nodiscard]] bool narrow_phase_parallelepiped_parts(const parallelepiped &aVolume,
-        const std::vector<collider_part> &aParts, const shape_kinematics &aCollider);
+        std::span<const collider_part> aParts, const shape_kinematics &aCollider);
 
     //! the least and the most corner of a parallelepiped's box in the world
     [[nodiscard]] vector3_type parallelepiped_low(const parallelepiped &aVolume);
@@ -66,7 +67,7 @@ namespace gdk::collisions {
     [[nodiscard]] vector3_type shape_extents(const shape_type &aShape,
         const quaternion_type &aOrientation = quaternion_type::identity);
 
-    //! **a shape's world-space axis aligned bounds**, from where it is: its least corner and its most
+    //! a shape's world-space axis aligned bounds
     struct shape_offsets final {
         vector3_type low;
         vector3_type high;
