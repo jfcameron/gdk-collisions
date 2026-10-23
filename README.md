@@ -1,6 +1,6 @@
 # gdk-collisions
 
-3D collision detection and resolution in C++20
+3D collision detection and resolution library for games.
 
 ## Getting Started
 Install cmake 3.21 or greater, and a c++20 compatible compiler 
