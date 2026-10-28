@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_TYPES_H
 #define GDK_COLLISIONS_TYPES_H
@@ -12,7 +12,7 @@
 #include <memory>
 
 namespace gdk::collisions {
-    class box_collider;
+    class aabb_collider;
     class capsule_collider;
     class compound_collider;
     class heightfield_collider;
@@ -23,6 +23,7 @@ namespace gdk::collisions {
     class obb_collider;
     class collider;
     class scene;
+    class scene_kernels;
     struct overlap;
     struct contact;
     class sphere_collider;
@@ -33,26 +34,30 @@ namespace gdk::collisions {
 
     inline constexpr collision_layers_type ALL_COLLISION_LAYERS = ~collision_layers_type{0};
 
+    /// \brief identifies a collider within its scene; reused only after an update has forgotten the last holder
+    using collider_id_type = std::uint64_t;
+
     using delta_time_type = float;
     using floating_point_type = float; 
 
-    using matrix4x4_type = matrix4x4<floating_point_type>;
-    using quaternion_type = quaternion<floating_point_type>;
-    using vector2_type = vector2<floating_point_type>;
-    using vector3_type = vector3<floating_point_type>;
-    using vector4_type = vector4<floating_point_type>;
+    using matrix4x4_type = math::matrix4x4<floating_point_type>;
+    using quaternion_type = math::quaternion<floating_point_type>;
+    using vector2_type = math::vector2<floating_point_type>;
+    using vector3_type = math::vector3<floating_point_type>;
+    using vector4_type = math::vector4<floating_point_type>;
 
     using chunk_type = jfc::dispatch::chunk_type;
 
     using task_dispatcher_type = jfc::dispatch::task_dispatcher_type;
 
-    using box_collider_ptr_type = std::shared_ptr<box_collider>;
+    using aabb_collider_ptr_type = std::shared_ptr<aabb_collider>;
     using capsule_collider_ptr_type = std::shared_ptr<capsule_collider>;
     using collider_ptr_type = std::shared_ptr<collider>;
     using collider_weak_ptr_type = std::weak_ptr<collider>;
     using scene_ptr_type = std::shared_ptr<scene>;
+    using scene_kernels_ptr_type = std::shared_ptr<scene_kernels>;
     using compound_collider_ptr_type = std::shared_ptr<compound_collider>;
-    using const_box_collider_ptr_type = std::shared_ptr<const box_collider>;
+    using const_aabb_collider_ptr_type = std::shared_ptr<const aabb_collider>;
     using const_capsule_collider_ptr_type = std::shared_ptr<const capsule_collider>;
     using const_collider_ptr_type = std::shared_ptr<const collider>;
     using const_collider_weak_ptr_type = std::weak_ptr<const collider>;
@@ -68,7 +73,6 @@ namespace gdk::collisions {
     using mesh_data_ptr_type = std::shared_ptr<const mesh_data>;
     using obb_collider_ptr_type = std::shared_ptr<obb_collider>;
     using sphere_collider_ptr_type = std::shared_ptr<sphere_collider>;
-    using sphere_collider_weak_ptr_type = std::weak_ptr<sphere_collider>;
 }
 
 #endif

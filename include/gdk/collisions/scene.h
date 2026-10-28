@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_SCENE_H
 #define GDK_COLLISIONS_SCENE_H
@@ -12,6 +12,7 @@
 #include <gdk/collisions/parallelepiped.h>
 #include <gdk/collisions/upright_cylinder.h>
 #include <gdk/collisions/rigid_transform.h>
+#include <gdk/collisions/scene_policy.h>
 
 #include <functional>
 #include <memory>
@@ -78,38 +79,38 @@ namespace gdk::collisions {
         }
 
         /// \brief create an axis aligned box collider in the scene
-        [[nodiscard]] box_collider_ptr_type make_axis_aligned_box_collider(
+        [[nodiscard]] aabb_collider_ptr_type make_aabb_collider(
             const response_handler &aHandler = response_handlers::slide_preserving_speed()) {
-            return do_make_axis_aligned_box_collider(aHandler);
+            return do_make_aabb_collider(aHandler);
         }
 
         /// \brief create an axis aligned box trigger volume in the scene
-        [[nodiscard]] box_collider_ptr_type make_axis_aligned_box_trigger() {
-            return do_make_axis_aligned_box_trigger();
+        [[nodiscard]] aabb_collider_ptr_type make_aabb_trigger() {
+            return do_make_aabb_trigger();
         }
 
         /// \brief create a new immovable axis aligned box in the scene
         /// \param aTransform where it sits. Must be rigid (rotation and translation only).
         ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aHalfExtents the box's size.
-        [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_collider(
+        [[nodiscard]] const_aabb_collider_ptr_type make_static_aabb_collider(
             const matrix4x4_type &aTransform,
             const vector3_type &aHalfExtents) {
-            require_rigid_transform(aTransform, "make_static_axis_aligned_box_collider");
+            require_rigid_transform(aTransform, "make_static_aabb_collider");
 
-            return do_make_static_axis_aligned_box_collider(aTransform, aHalfExtents);
+            return do_make_static_aabb_collider(aTransform, aHalfExtents);
         }
 
         /// \brief create a new immovable axis aligned box trigger volume in the scene
         /// \param aTransform where it sits. Must be rigid (rotation and translation only).
         ///        a scale, shear or reflection throws \ref gdk::collisions::exception.
         /// \param aHalfExtents the box's size. 
-        [[nodiscard]] const_box_collider_ptr_type make_static_axis_aligned_box_trigger(
+        [[nodiscard]] const_aabb_collider_ptr_type make_static_aabb_trigger(
             const matrix4x4_type &aTransform,
             const vector3_type &aHalfExtents) {
-            require_rigid_transform(aTransform, "make_static_axis_aligned_box_trigger");
+            require_rigid_transform(aTransform, "make_static_aabb_trigger");
 
-            return do_make_static_axis_aligned_box_trigger(aTransform, aHalfExtents);
+            return do_make_static_aabb_trigger(aTransform, aHalfExtents);
         }
 
         /// \brief create a sphere collider in the scene
@@ -273,10 +274,10 @@ namespace gdk::collisions {
         [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const = 0;
         [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const = 0;
 
-        [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_collider(const response_handler &) = 0;
-        [[nodiscard]] virtual box_collider_ptr_type do_make_axis_aligned_box_trigger() = 0;
-        [[nodiscard]] virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_collider(const matrix4x4_type &, const vector3_type &) = 0;
-        [[nodiscard]] virtual const_box_collider_ptr_type do_make_static_axis_aligned_box_trigger(const matrix4x4_type &, const vector3_type &) = 0;
+        [[nodiscard]] virtual aabb_collider_ptr_type do_make_aabb_collider(const response_handler &) = 0;
+        [[nodiscard]] virtual aabb_collider_ptr_type do_make_aabb_trigger() = 0;
+        [[nodiscard]] virtual const_aabb_collider_ptr_type do_make_static_aabb_collider(const matrix4x4_type &, const vector3_type &) = 0;
+        [[nodiscard]] virtual const_aabb_collider_ptr_type do_make_static_aabb_trigger(const matrix4x4_type &, const vector3_type &) = 0;
 
         [[nodiscard]] virtual sphere_collider_ptr_type do_make_sphere_collider(const response_handler &) = 0;
         [[nodiscard]] virtual sphere_collider_ptr_type do_make_sphere_trigger() = 0;
@@ -304,6 +305,12 @@ namespace gdk::collisions {
         [[nodiscard]] virtual heightfield_collider_ptr_type do_make_heightfield_collider(const response_handler &) = 0;
         [[nodiscard]] virtual const_heightfield_collider_ptr_type do_make_static_heightfield_collider(const matrix4x4_type &, const heightfield_data_ptr_type &) = 0;
     };
+
+    /// \brief a scene that moves its colliders by conservative advancement, its spatial work done by aKernels:
+    /// make_std_kernels() when none are given. An empty observer ignores its events.
+    /// \exception exception if aPolicy holds a value the scene cannot run with
+    [[nodiscard]] scene_ptr_type make_scene(collision_observer_type aCollisionObserver,
+        trigger_observer_type aTriggerObserver, scene_policy aPolicy = {}, scene_kernels_ptr_type aKernels = {});
 }
 
 #endif

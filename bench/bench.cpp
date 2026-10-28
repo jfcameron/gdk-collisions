@@ -1,13 +1,15 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <gdk/collisions/collider.h>
 #include <gdk/collisions/scene.h>
 #include <gdk/collisions/impl_collider.h>
-#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/scene_policy.h>
+#include <gdk/collisions/std_kernels.h>
 #include <gdk/collisions/impl_collision_profile.h>
-#include <gdk/collisions/box_collider.h>
+#include <gdk/collisions/aabb_collider.h>
 #include <gdk/collisions/capsule_collider.h>
-#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/mesh_data.h>
+#include <gdk/collisions/scene.h>
 #include <gdk/collisions/impl_mesh_data.h>
 #include <gdk/collisions/mesh_collider.h>
 #include <gdk/collisions/plane_collider.h>
@@ -47,8 +49,6 @@ namespace {
 
         std::size_t chunkSize = 0;
 
-        bool spatialOrder = true;
-
         ground_kind ground = ground_kind::plane;
 
         bool capsules = false;
@@ -56,15 +56,13 @@ namespace {
         bool shuffled = false;
     };
 
-    [[nodiscard]] impl_collision_policy policy_for(const configuration &aConfiguration) {
-        if (aConfiguration.cellSize == 0 && aConfiguration.chunkSize == 0
-            && aConfiguration.spatialOrder) return impl_collision_policy{};
+    [[nodiscard]] std_kernels_policy policy_for(const configuration &aConfiguration) {
+        std_kernels_policy policy;
 
-        const impl_collision_policy defaults;
-        const auto cellSize = aConfiguration.cellSize ? aConfiguration.cellSize : defaults.BROAD_PHASE_CELL_SIZE;
-        const auto chunkSize = aConfiguration.chunkSize ? aConfiguration.chunkSize : defaults.PARALLEL_DETECT_CHUNK_SIZE;
-        return impl_collision_policy{1, 1e-7f, 8, cellSize, 512, chunkSize,
-            aConfiguration.spatialOrder};
+        if (aConfiguration.cellSize != 0) policy.BROAD_PHASE_CELL_SIZE = aConfiguration.cellSize;
+        if (aConfiguration.chunkSize != 0) policy.PARALLEL_CHUNK_SIZE = aConfiguration.chunkSize;
+
+        return policy;
     }
 
     struct phase_averages final {
@@ -145,7 +143,7 @@ namespace {
         scene_ptr_type pScene;
 
         const_plane_collider_ptr_type pGround;
-        std::vector<const_box_collider_ptr_type> groundBoxes;
+        std::vector<const_aabb_collider_ptr_type> groundBoxes;
         const_mesh_collider_ptr_type pGroundMesh;
         mesh_data_ptr_type groundMeshData;
 
@@ -182,7 +180,7 @@ namespace {
                 indices.push_back(at(x + 1, z + 1));
             }
 
-        return impl_mesh_data::make(std::move(vertices), std::move(indices));
+        return make_mesh_data(std::move(vertices), std::move(indices));
     }
 
     void build_ground(field &aField, const configuration &aConfiguration);
@@ -292,7 +290,7 @@ namespace {
                     -0.5f,
                     originZ + (aConfiguration.bodiesPerSide - 1) * aConfiguration.spacing * 0.5f});
 
-                aField.groundBoxes.push_back(aField.pScene->make_static_axis_aligned_box_collider(
+                aField.groundBoxes.push_back(aField.pScene->make_static_aabb_collider(
                     transform, {halfSpan, 0.5f, halfSpan}));
                 break;
             }
@@ -307,7 +305,7 @@ namespace {
                         transform.set_translation({originX + x * aConfiguration.spacing, -0.5f,
                             originZ + z * aConfiguration.spacing});
                         aField.groundBoxes.push_back(
-                            aField.pScene->make_static_axis_aligned_box_collider(transform, {0.5f, 0.5f, 0.5f}));
+                            aField.pScene->make_static_aabb_collider(transform, {0.5f, 0.5f, 0.5f}));
                     }
                 break;
             }
@@ -326,7 +324,7 @@ namespace {
     [[nodiscard]] field build_field(const configuration &aConfiguration,
         const task_dispatcher_type &aDispatcher = {}) {
         field result;
-        result.pScene = impl_collision_scene::make(nullptr, nullptr, policy_for(aConfiguration), aDispatcher);
+        result.pScene = make_scene(nullptr, nullptr, scene_policy{}, make_std_kernels(policy_for(aConfiguration), aDispatcher));
 
         build_ground(result, aConfiguration);
 
@@ -387,8 +385,8 @@ namespace {
     }
 
     [[nodiscard]] islands measure_islands(const field &aField) {
-        std::vector<impl_collider::broadphase_bounds> bounds;
-        bounds.reserve(aField.bodies.size());
+        std::vector<gdk::collisions::bounds> swept;
+        swept.reserve(aField.bodies.size());
 
         for (const auto &pSphere : aField.bodies) {
             const auto pImpl = std::dynamic_pointer_cast<impl_collider>(pSphere);
@@ -396,13 +394,16 @@ namespace {
                 std::fprintf(stderr, "island analysis: collider is not an impl_collider\n");
                 std::exit(1);
             }
-            bounds.push_back(pImpl->broad_phase_swept_bounds(DELTA_TIME));
+            const auto standing = pImpl->world_bounds();
+            const auto sweep = pImpl->velocity() * DELTA_TIME;
+            swept.push_back({vector3_type::min(standing.min, standing.min + sweep),
+                vector3_type::max(standing.max, standing.max + sweep)});
         }
 
+        const auto &bounds = swept;
         const auto n = bounds.size();
 
-        const auto overlaps = [](const impl_collider::broadphase_bounds &a,
-            const impl_collider::broadphase_bounds &b) {
+        const auto overlaps = [](const gdk::collisions::bounds &a, const gdk::collisions::bounds &b) {
             return a.min.x <= b.max.x && a.max.x >= b.min.x
                 && a.min.y <= b.max.y && a.max.y >= b.min.y
                 && a.min.z <= b.max.z && a.max.z >= b.min.z;
@@ -413,7 +414,7 @@ namespace {
             for (std::size_t j = i + 1; j < n; ++j)
                 if (overlaps(bounds[i], bounds[j])) byBounds.join(i, j);
 
-        const impl_collision_policy policy;
+        const std_kernels_policy policy;
         const auto coordinate = [&policy](const floating_point_type aValue) {
             return static_cast<long long>(std::floor(aValue / policy.BROAD_PHASE_CELL_SIZE));
         };
@@ -458,23 +459,23 @@ namespace {
 
 #ifdef GDK_COLLISION_PROFILE
         const auto &accumulated = profile::accumulated();
-        const double frames = accumulated.steps ? static_cast<double>(accumulated.steps) : 1.0;
-        averages.total = accumulated.total_ms / frames;
-        averages.rebuild = accumulated.broadphase_rebuild_ms / frames;
-        averages.kinematic = accumulated.kinematic_pass_ms / frames;
-        averages.dynamicLoop = accumulated.dynamic_loop_ms / frames;
-        averages.triggerLoop = accumulated.trigger_loop_ms / frames;
-        averages.events = accumulated.events_ms / frames;
-        averages.gatherQuery = accumulated.gather_query_ms / frames;
-        averages.gatherSort = accumulated.gather_sort_ms / frames;
-        averages.narrowPhase = accumulated.narrow_phase_ms / frames;
-        averages.resolveRespond = accumulated.resolve_respond_ms / frames;
-        averages.bvhQuery = accumulated.bvh_query_ms / frames;
-        averages.triangleTest = accumulated.triangle_test_ms / frames;
-        averages.meshQueries = static_cast<double>(accumulated.mesh_queries) / frames;
-        averages.meshCandidates = static_cast<double>(accumulated.mesh_candidates) / frames;
-        averages.triangleTests = static_cast<double>(accumulated.triangle_tests) / frames;
-        averages.advancementIterations = static_cast<double>(accumulated.advancement_iterations) / frames;
+        const double frames = accumulated.steps.load() ? static_cast<double>(accumulated.steps.load()) : 1.0;
+        averages.total = profile::milliseconds(accumulated.total_ns) / frames;
+        averages.rebuild = profile::milliseconds(accumulated.broadphase_rebuild_ns) / frames;
+        averages.kinematic = profile::milliseconds(accumulated.kinematic_pass_ns) / frames;
+        averages.dynamicLoop = profile::milliseconds(accumulated.dynamic_loop_ns) / frames;
+        averages.triggerLoop = profile::milliseconds(accumulated.trigger_loop_ns) / frames;
+        averages.events = profile::milliseconds(accumulated.events_ns) / frames;
+        averages.gatherQuery = profile::milliseconds(accumulated.gather_query_ns) / frames;
+        averages.gatherSort = profile::milliseconds(accumulated.gather_sort_ns) / frames;
+        averages.narrowPhase = profile::milliseconds(accumulated.narrow_phase_ns) / frames;
+        averages.resolveRespond = profile::milliseconds(accumulated.resolve_respond_ns) / frames;
+        averages.bvhQuery = profile::milliseconds(accumulated.bvh_query_ns) / frames;
+        averages.triangleTest = profile::milliseconds(accumulated.triangle_test_ns) / frames;
+        averages.meshQueries = static_cast<double>(accumulated.mesh_queries.load()) / frames;
+        averages.meshCandidates = static_cast<double>(accumulated.mesh_candidates.load()) / frames;
+        averages.triangleTests = static_cast<double>(accumulated.triangle_tests.load()) / frames;
+        averages.advancementIterations = static_cast<double>(accumulated.advancement_iterations.load()) / frames;
 #endif
 
         return averages;
@@ -570,24 +571,20 @@ int main() {
             d.meshQueries, d.meshCandidates, d.triangleTests, d.advancementIterations);
     }
 
-    std::printf("\n| bodies | spacing | body order | detect | total ms | rebuild | loop | gather |\n");
-    std::printf("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
+    std::printf("\n| bodies | spacing | body order | total ms | rebuild | loop | gather |\n");
+    std::printf("| --- | --- | --- | --- | --- | --- | --- |\n");
 
     for (const auto spacing : {3.00f, 1.02f}) {
         for (const bool shuffled : {false, true}) {
-            for (const bool spatial : {false, true}) {
-                configuration sweep{96, spacing, spacing > 2.0f ? "sparse" : "near"};
-                sweep.spatialOrder = spatial;
-                sweep.shuffled = shuffled;
-                auto scene = build_field(sweep);
-                const auto averages = measure_phases(scene);
+            configuration sweep{96, spacing, spacing > 2.0f ? "sparse" : "near"};
+            sweep.shuffled = shuffled;
+            auto scene = build_field(sweep);
+            const auto averages = measure_phases(scene);
 
-                std::printf("| %d | %.2f %s | %s | %s | %.1f | %.1f | %.1f | %.1f |\n",
-                    sweep.bodiesPerSide * sweep.bodiesPerSide, sweep.spacing, sweep.description,
-                    shuffled ? "shuffled" : "spatial at creation",
-                    spatial ? "sorted" : "as created",
-                    averages.total, averages.rebuild, averages.dynamicLoop, averages.gatherQuery);
-            }
+            std::printf("| %d | %.2f %s | %s | %.1f | %.1f | %.1f | %.1f |\n",
+                sweep.bodiesPerSide * sweep.bodiesPerSide, sweep.spacing, sweep.description,
+                shuffled ? "shuffled" : "spatial at creation",
+                averages.total, averages.rebuild, averages.dynamicLoop, averages.gatherQuery);
         }
     }
 

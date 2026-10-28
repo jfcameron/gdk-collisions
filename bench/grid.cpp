@@ -1,12 +1,11 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <gdk/collisions/collider.h>
 #include <gdk/collisions/scene.h>
-#include <gdk/collisions/impl_broadphase_grid.h>
+#include <gdk/collisions/std_kernels.h>
 #include <gdk/collisions/impl_collider.h>
-#include <gdk/collisions/impl_collision_policy.h>
-#include <gdk/collisions/impl_collision_scene.h>
-#include <gdk/collisions/impl_dynamic_broadphase_grid.h>
+#include <gdk/collisions/impl_mover_grid.h>
+#include <gdk/collisions/impl_static_grid.h>
 #include <gdk/collisions/sphere_collider.h>
 
 #include <chrono>
@@ -51,11 +50,21 @@ namespace {
         scene_ptr_type pScene;
         std::vector<sphere_collider_ptr_type> handles;
         std::vector<impl_collider_ptr_type> bodies;
+
+        [[nodiscard]] bounds swept(const std::uint32_t aRow) const {
+            const auto standing = bodies[aRow]->world_bounds();
+            const auto sweep = bodies[aRow]->velocity() * DELTA_TIME;
+
+            return bounds{vector3_type::min(standing.min, standing.min + sweep),
+                vector3_type::max(standing.max, standing.max + sweep)};
+        }
+
+        [[nodiscard]] std::uint32_t size() const { return static_cast<std::uint32_t>(bodies.size()); }
     };
 
     [[nodiscard]] field build_field(const configuration &aConfiguration) {
         field result;
-        result.pScene = impl_collision_scene::make(nullptr, nullptr, impl_collision_policy{});
+        result.pScene = make_scene(nullptr, nullptr);
 
         const auto side = aConfiguration.bodiesPerSide;
         const auto spacing = aConfiguration.spacing;
@@ -84,9 +93,8 @@ namespace {
     }
 
     /// \brief Morton (Z-order) code of a body's cell, for sorting bodies into spatial order.
-    [[nodiscard]] std::uint64_t morton_of(const impl_collision_policy &aPolicy,
-        const impl_collider::broadphase_bounds &aBounds) {
-        const auto cell = broadphase_cell_coord(aPolicy, aBounds.min);
+    [[nodiscard]] std::uint64_t morton_of(const std_kernels_policy &aPolicy, const bounds &aBounds) {
+        const auto cell = broadphase_cell_coord(aPolicy.BROAD_PHASE_CELL_SIZE, aBounds.min);
 
         const auto spread = [](std::uint64_t aValue) {
             aValue &= 0x1fffff;
@@ -107,25 +115,24 @@ namespace {
 
     enum class body_order { creation, spatial, shuffled };
 
-    [[nodiscard]] std::vector<impl_collider_ptr_type> ordered_bodies(const field &aField,
-        const body_order aOrder) {
-        auto bodies = aField.bodies;
-        if (aOrder == body_order::creation) return bodies;
+    [[nodiscard]] std::vector<std::uint32_t> ordered_rows(const field &aField, const body_order aOrder) {
+        std::vector<std::uint32_t> rows(aField.size());
+        std::iota(rows.begin(), rows.end(), 0u);
+
+        if (aOrder == body_order::creation) return rows;
 
         if (aOrder == body_order::shuffled) {
             std::mt19937 engine(20260804u);
-            std::shuffle(bodies.begin(), bodies.end(), engine);
-            return bodies;
+            std::shuffle(rows.begin(), rows.end(), engine);
+            return rows;
         }
 
-        const impl_collision_policy policy;
-        std::sort(bodies.begin(), bodies.end(),
-            [&policy](const impl_collider_ptr_type &aFirst, const impl_collider_ptr_type &aSecond) {
-                return morton_of(policy, aFirst->broad_phase_swept_bounds(DELTA_TIME))
-                    < morton_of(policy, aSecond->broad_phase_swept_bounds(DELTA_TIME));
-            });
+        const std_kernels_policy policy;
+        std::sort(rows.begin(), rows.end(), [&](const std::uint32_t aFirst, const std::uint32_t aSecond) {
+            return morton_of(policy, aField.swept(aFirst)) < morton_of(policy, aField.swept(aSecond));
+        });
 
-        return bodies;
+        return rows;
     }
 
     struct access_probe final {
@@ -136,13 +143,13 @@ namespace {
     };
 
     [[nodiscard]] std::vector<broadphase_cell_key> all_cells(const field &aField) {
-        const impl_collision_policy policy;
+        const std_kernels_policy policy;
         std::vector<broadphase_cell_key> cells;
 
-        for (const auto &pBody : aField.bodies) {
-            const auto bounds = pBody->broad_phase_swept_bounds(DELTA_TIME);
-            const auto min = broadphase_cell_coord(policy, bounds.min);
-            const auto max = broadphase_cell_coord(policy, bounds.max);
+        for (std::uint32_t row = 0; row < aField.size(); ++row) {
+            const auto reach = aField.swept(row);
+            const auto min = broadphase_cell_coord(policy.BROAD_PHASE_CELL_SIZE, reach.min);
+            const auto max = broadphase_cell_coord(policy.BROAD_PHASE_CELL_SIZE, reach.max);
 
             for (int z = min.z; z <= max.z; ++z)
             for (int y = min.y; y <= max.y; ++y)
@@ -158,7 +165,6 @@ namespace {
     constexpr std::size_t CELLS_PER_BLOCK = BLOCK_SIDE * BLOCK_SIDE * BLOCK_SIDE;
 
     [[nodiscard]] access_probe probe_access(const field &aField, const bool aBlockCoherent) {
-        const impl_collision_policy policy;
         const auto cells = all_cells(aField);
 
         std::unordered_set<std::uint64_t> distinctCells;
@@ -212,35 +218,26 @@ namespace {
         return result;
     }
 
-    [[nodiscard]] rebuild_costs measure_node_grid(const field &aField) {
-        const impl_collision_policy policy;
-        impl_broadphase_grid grid(policy);
-
-        for (const auto &pBody : aField.bodies)
-            grid.insert(pBody, pBody->broad_phase_swept_bounds(DELTA_TIME),
-                impl_broadphase_grid::body_kind::collider, false);
+    [[nodiscard]] rebuild_costs measure_static_grid(const field &aField) {
+        const std_kernels_policy policy;
 
         rebuild_costs costs;
 
-        std::vector<impl_collider::broadphase_bounds> bounds;
-        bounds.reserve(aField.bodies.size());
+        std::vector<bounds> reaches;
+        reaches.reserve(aField.size());
 
         for (int frame = 0; frame < MEASURED_FRAMES; ++frame) {
             const auto clearStart = clock_type::now();
-            grid.clear();
-            grid.reserve(aField.bodies.size());
+            impl_static_grid grid(policy);
             costs.clear += milliseconds_since(clearStart);
 
-            bounds.clear();
+            reaches.clear();
             const auto boundsStart = clock_type::now();
-            for (const auto &pBody : aField.bodies)
-                bounds.push_back(pBody->broad_phase_swept_bounds(DELTA_TIME));
+            for (std::uint32_t row = 0; row < aField.size(); ++row) reaches.push_back(aField.swept(row));
             costs.bounds += milliseconds_since(boundsStart);
 
             const auto insertStart = clock_type::now();
-            for (std::size_t i = 0; i < aField.bodies.size(); ++i)
-                grid.insert(aField.bodies[i], bounds[i],
-                    impl_broadphase_grid::body_kind::collider, false);
+            for (std::uint32_t row = 0; row < aField.size(); ++row) grid.insert(row, reaches[row]);
             costs.insert += milliseconds_since(insertStart);
         }
 
@@ -250,38 +247,36 @@ namespace {
         return costs;
     }
 
-    [[nodiscard]] rebuild_costs measure_flat_grid(const field &aField,
+    [[nodiscard]] rebuild_costs measure_mover_grid(const field &aField,
         const body_order aOrder = body_order::creation) {
-        const impl_collision_policy policy;
-        impl_dynamic_broadphase_grid grid(policy);
+        const std_kernels_policy policy;
+        impl_mover_grid grid(policy);
 
-        const auto bodies = ordered_bodies(aField, aOrder);
+        const auto rows = ordered_rows(aField, aOrder);
 
         rebuild_costs costs;
 
-        std::vector<impl_collider::broadphase_bounds> bounds;
-        bounds.reserve(aField.bodies.size());
+        std::vector<bounds> reaches(aField.size());
+        std::vector<bounds> standing(aField.size());
 
-        for (const auto &pBody : bodies)
-            grid.add(pBody, pBody->broad_phase_swept_bounds(DELTA_TIME),
-                impl_dynamic_broadphase_grid::body_kind::collider);
+        for (const auto row : rows) grid.add(row, aField.swept(row), aField.bodies[row]->world_bounds());
         grid.build();
 
         for (int frame = 0; frame < MEASURED_FRAMES; ++frame) {
             const auto clearStart = clock_type::now();
             grid.clear();
-            grid.reserve(aField.bodies.size());
+            grid.reserve(aField.size());
             costs.clear += milliseconds_since(clearStart);
 
-            bounds.clear();
             const auto boundsStart = clock_type::now();
-            for (const auto &pBody : bodies)
-                bounds.push_back(pBody->broad_phase_swept_bounds(DELTA_TIME));
+            for (const auto row : rows) {
+                reaches[row] = aField.swept(row);
+                standing[row] = aField.bodies[row]->world_bounds();
+            }
             costs.bounds += milliseconds_since(boundsStart);
 
             const auto insertStart = clock_type::now();
-            for (std::size_t i = 0; i < bodies.size(); ++i)
-                grid.add(bodies[i], bounds[i], impl_dynamic_broadphase_grid::body_kind::collider);
+            for (const auto row : rows) grid.add(row, reaches[row], standing[row]);
             grid.build();
             costs.insert += milliseconds_since(insertStart);
         }
@@ -293,39 +288,31 @@ namespace {
     }
 
     [[nodiscard]] double measure_queries(const field &aField, const body_order aOrder) {
-        const impl_collision_policy policy;
-        impl_dynamic_broadphase_grid grid(policy);
+        const std_kernels_policy policy;
+        impl_mover_grid grid(policy);
 
-        const auto bodies = ordered_bodies(aField, aOrder);
+        const auto rows = ordered_rows(aField, aOrder);
 
-        for (const auto &pBody : bodies)
-            grid.add(pBody, pBody->broad_phase_swept_bounds(DELTA_TIME),
-                impl_dynamic_broadphase_grid::body_kind::collider);
+        for (const auto row : rows) grid.add(row, aField.swept(row), aField.bodies[row]->world_bounds());
         grid.build();
 
-        collider_id_set seen;
-        std::vector<impl_broadphase_grid::neighbour> neighbours;
-
-        for (const auto &pBody : bodies) {
-            seen.clear();
-            neighbours.clear();
-            grid.gather_neighbours(*pBody, DELTA_TIME, seen, neighbours);
-        }
+        impl_row_set seen;
+        std::vector<std::uint32_t> met;
 
         double total = 0;
         std::size_t found = 0;
 
-        for (int frame = 0; frame < MEASURED_FRAMES; ++frame) {
+        for (int frame = 0; frame < MEASURED_FRAMES + 1; ++frame) {
             const auto start = clock_type::now();
 
-            for (const auto &pBody : bodies) {
+            for (const auto row : rows) {
                 seen.clear();
-                neighbours.clear();
-                grid.gather_neighbours(*pBody, DELTA_TIME, seen, neighbours);
-                found += neighbours.size();
+                met.clear();
+                grid.gather(aField.swept(row), row, seen, met);
+                found += met.size();
             }
 
-            total += milliseconds_since(start);
+            if (frame > 0) total += milliseconds_since(start);
         }
 
         if (found == 0 && aField.bodies.size() > 1000)
@@ -335,12 +322,11 @@ namespace {
     }
 
     [[nodiscard]] rebuild_costs measure_cells(const field &aField) {
-        const impl_collision_policy policy;
+        const std_kernels_policy policy;
         rebuild_costs costs;
 
-        std::vector<impl_collider::broadphase_bounds> bounds;
-        for (const auto &pBody : aField.bodies)
-            bounds.push_back(pBody->broad_phase_swept_bounds(DELTA_TIME));
+        std::vector<gdk::collisions::bounds> reaches;
+        for (std::uint32_t row = 0; row < aField.size(); ++row) reaches.push_back(aField.swept(row));
 
         const auto coordinate = [&policy](const floating_point_type aValue) {
             return static_cast<long long>(std::floor(aValue / policy.BROAD_PHASE_CELL_SIZE));
@@ -348,7 +334,7 @@ namespace {
 
         std::unordered_set<long long> occupied;
 
-        for (const auto &bound : bounds) {
+        for (const auto &bound : reaches) {
             for (auto x = coordinate(bound.min.x); x <= coordinate(bound.max.x); ++x)
             for (auto y = coordinate(bound.min.y); y <= coordinate(bound.max.y); ++y)
             for (auto z = coordinate(bound.min.z); z <= coordinate(bound.max.z); ++z) {
@@ -400,7 +386,7 @@ int main() {
         };
 
         for (const auto &order : orders) {
-            const auto costs = measure_flat_grid(scene, order.second);
+            const auto costs = measure_mover_grid(scene, order.second);
 
             std::printf("| %zu | %.2f %s | %s | %.1f | %.1f |\n",
                 scene.bodies.size(), configuration.spacing, configuration.description, order.first,
@@ -418,8 +404,8 @@ int main() {
         const auto cells = measure_cells(scene);
 
         const std::pair<const char *, rebuild_costs> runs[] = {
-            {"node (was)", measure_node_grid(scene)},
-            {"flat (is)", measure_flat_grid(scene)},
+            {"static", measure_static_grid(scene)},
+            {"mover", measure_mover_grid(scene)},
         };
 
         for (const auto &run : runs) {

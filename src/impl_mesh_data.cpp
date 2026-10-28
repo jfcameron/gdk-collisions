@@ -1,10 +1,12 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <gdk/collisions/exception.h>
+#include <gdk/collisions/mesh_data.h>
 #include <gdk/collisions/impl_mesh_data.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -28,9 +30,16 @@ mesh_data_ptr_type impl_mesh_data::make(std::vector<vector3_type> aVertices,
     if (aIndices.size() % 3 != 0)
         throw exception("gdk::collision: mesh index count is not a multiple of three");
 
+    if (aIndices.size() / 3 > std::numeric_limits<std::uint32_t>::max())
+        throw exception("gdk::collision: mesh has more triangles than a 32 bit index can name");
+
     for (const auto index : aIndices)
         if (index >= aVertices.size())
             throw exception("gdk::collision: mesh index is out of range of its vertices");
+
+    for (const auto &vertex : aVertices)
+        if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z))
+            throw exception("gdk::collision: mesh vertex is not a finite number");
 
     return mesh_data_ptr_type(new impl_mesh_data(std::move(aVertices), std::move(aIndices),
         aCoplanarTolerance));
@@ -236,4 +245,47 @@ void impl_mesh_data::query(const bounds &aQuery, std::vector<std::uint32_t> &aOu
 
 void impl_mesh_data::all(std::vector<std::uint32_t> &aOut) const {
     aOut.insert(aOut.end(), m_Order.begin(), m_Order.end());
+}
+
+void impl_mesh_data::query_below(const vector3_type &aPoint, const vector3_type &aNormal,
+    const floating_point_type aReach, std::vector<std::uint32_t> &aOut) const {
+    if (m_Nodes.empty()) return;
+
+    const auto lowest = [&](const bounds &aBox) {
+        const vector3_type support{aNormal.x > 0 ? aBox.min.x : aBox.max.x, aNormal.y > 0 ? aBox.min.y : aBox.max.y,
+            aNormal.z > 0 ? aBox.min.z : aBox.max.z};
+
+        return (support - aPoint).dot_product(aNormal);
+    };
+
+    constexpr std::size_t MAX_DEPTH = 64;
+    std::uint32_t stack[MAX_DEPTH];
+    std::size_t depth = 0;
+
+    stack[depth++] = 0;
+
+    while (depth > 0) {
+        const auto index = stack[--depth];
+
+        const auto &current = m_Nodes[index];
+        if (lowest(current.box) > aReach) continue;
+
+        if (current.count > 0) {
+            for (std::uint32_t i = 0; i < current.count; ++i) {
+                const auto triangle = m_Order[current.first + i];
+
+                if (lowest(bounds_of(triangle)) <= aReach) aOut.push_back(triangle);
+            }
+
+            continue;
+        }
+
+        stack[depth++] = current.right;
+        stack[depth++] = index + 1;
+    }
+}
+
+mesh_data_ptr_type gdk::collisions::make_mesh_data(std::vector<vector3_type> aVertices,
+    std::vector<std::uint32_t> aIndices, const floating_point_type aCoplanarTolerance) {
+    return impl_mesh_data::make(std::move(aVertices), std::move(aIndices), aCoplanarTolerance);
 }

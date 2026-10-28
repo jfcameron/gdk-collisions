@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_RIGID_TRANSFORM_H
 #define GDK_COLLISIONS_RIGID_TRANSFORM_H

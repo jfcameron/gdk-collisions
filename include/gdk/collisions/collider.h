@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_COLLIDER_H
 #define GDK_COLLISIONS_COLLIDER_H
@@ -13,7 +13,11 @@ namespace gdk::collisions {
         /// \brief gets a copy of the transform
         [[nodiscard]] virtual matrix4x4_type transform() const = 0;
 
-        /// \brief add a vector to the collider's velocity. 
+        /// \brief add a vector to the collider's velocity.
+        ///
+        /// Velocity is what the collider wants to travel during the next scene::update(), in units
+        /// per second. The update consumes it: afterwards velocity() is zero and
+        /// resolved_velocity() holds what it became after every contact. Add it again each frame.
         virtual void add_velocity(const vector3_type &aVelocity) = 0;
 
         /// \brief directly sets the velocity, this should be used with care
@@ -50,7 +54,8 @@ namespace gdk::collisions {
         /// The third kind of body, alongside static and dynamic. A kinematic collider travels its
         /// full velocity every step no matter what is in the way, and resolution never displaces
         /// it, but it still blocks and displaces everything else and still reports contacts and
-        /// trigger overlaps normally. Example uses: moving platforms, doors etc.
+        /// trigger overlaps normally. Kinematic colliders never meet one another, so several can
+        /// make up one moving body. Example uses: moving platforms, doors etc.
         virtual void set_kinematic(const bool aKinematic) = 0;
 
         /// \brief check if this collider is kinematic
@@ -77,7 +82,9 @@ namespace gdk::collisions {
         /// \brief turn the collider by aRotation on top of the orientation it already has in worldspace
         virtual void add_rotation(const quaternion_type &aRotation) = 0;
 
-        /// \brief add to the collider's angular velocity in radians per second
+        /// \brief add to the collider's angular velocity in radians per second.
+        ///
+        /// Like velocity, the next scene::update() consumes it and leaves it zero.
         virtual void add_angular_velocity(const vector3_type &aAngularVelocity) = 0;
 
         /// \brief directly sets the angular velocity. this should be used with care

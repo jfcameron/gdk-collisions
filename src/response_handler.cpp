@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <gdk/collisions/collider.h>
 #include <gdk/collisions/response_handler.h>
@@ -19,16 +19,16 @@ namespace {
 
         auto slideVelocity = velocity - aCollisionNormal * vn;
 
-        for (std::size_t first = 0; first + 1 < aClipPlanes.size(); ++first) {
+        const auto parallel = [&](const vector3_type &aPlane) {
+            return aPlane.dot_product(aCollisionNormal) >= aContact.clip_plane_parallel_cosine;
+        };
+
+        for (std::size_t first = 0; first < aClipPlanes.size(); ++first) {
             const auto &plane = aClipPlanes[first];
 
-            if (slideVelocity.dot_product(plane) >= 0) continue;
+            if (parallel(plane) || slideVelocity.dot_product(plane) >= 0) continue;
 
-            const auto facing = plane.dot_product(aCollisionNormal);
-
-            if (facing <= -aContact.clip_plane_parallel_cosine) return vector3_type::zero;
-
-            if (facing >= aContact.clip_plane_parallel_cosine) continue;
+            if (plane.dot_product(aCollisionNormal) <= -aContact.clip_plane_parallel_cosine) return vector3_type::zero;
 
             auto along = plane.cross_product(aCollisionNormal);
             const auto length = along.length();
@@ -36,8 +36,8 @@ namespace {
             along = along * (1.0f / length);
             slideVelocity = along * slideVelocity.dot_product(along);
 
-            for (std::size_t other = 0; other + 1 < aClipPlanes.size(); ++other)
-                if (other != first && slideVelocity.dot_product(aClipPlanes[other]) < 0)
+            for (std::size_t other = 0; other < aClipPlanes.size(); ++other)
+                if (other != first && !parallel(aClipPlanes[other]) && slideVelocity.dot_product(aClipPlanes[other]) < 0)
                     return vector3_type::zero;
 
             break;

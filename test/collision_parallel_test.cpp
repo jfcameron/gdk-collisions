@@ -1,12 +1,13 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <jfc/catch.hpp>
 
 #include <gdk/collisions/collider.h>
 #include <gdk/collisions/scene.h>
 #include <gdk/collisions/types.h>
-#include <gdk/collisions/impl_collision_policy.h>
-#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/scene_policy.h>
+#include <gdk/collisions/std_kernels.h>
+#include <gdk/collisions/scene.h>
 #include <gdk/collisions/raycast_hit.h>
 #include <gdk/collisions/sphere_collider.h>
 
@@ -30,7 +31,7 @@ namespace {
 
     [[nodiscard]] world make_world(const task_dispatcher_type &aDispatcher) {
         world result;
-        result.scene = impl_collision_scene::make(nullptr, nullptr, impl_collision_policy{}, aDispatcher);
+        result.scene = make_scene(nullptr, nullptr, scene_policy{}, make_std_kernels({}, aDispatcher));
         result.ground = result.scene->make_static_plane_collider(matrix4x4_type::identity);
 
         for (int x = 0; x < 14; ++x) {
@@ -174,8 +175,8 @@ TEST_CASE("gdk::scene hands work to its dispatcher only with enough bodies to be
         });
     };
 
-    const auto updated = [](const impl_collision_policy &aPolicy, const task_dispatcher_type &aDispatcher, const int aBodies) {
-        const auto scene = impl_collision_scene::make(nullptr, nullptr, aPolicy, aDispatcher);
+    const auto updated = [](const std_kernels_policy &aPolicy, const task_dispatcher_type &aDispatcher, const int aBodies) {
+        const auto scene = make_scene(nullptr, nullptr, scene_policy{}, make_std_kernels(aPolicy, aDispatcher));
         const auto ground = scene->make_static_plane_collider(matrix4x4_type::identity);
 
         std::vector<sphere_collider_ptr_type> bodies;
@@ -190,24 +191,24 @@ TEST_CASE("gdk::scene hands work to its dispatcher only with enough bodies to be
         scene->update(DELTA_TIME);
     };
 
-    const impl_collision_policy policy;
+    const std_kernels_policy policy;
 
     std::size_t calls = 0;
 
     SECTION("one short of the policy's fewest: never called") {
-        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_BODIES) - 1);
+        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_WORK) - 1);
 
         REQUIRE(calls == 0);
     }
 
     SECTION("the policy's fewest: called") {
-        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_BODIES));
+        updated(policy, counting(calls), static_cast<int>(policy.PARALLEL_MIN_WORK));
 
         REQUIRE(calls > 0);
     }
 
     SECTION("a policy of none at all: called for a single body") {
-        updated(impl_collision_policy{.PARALLEL_MIN_BODIES = 0}, counting(calls), 1);
+        updated(std_kernels_policy{.PARALLEL_MIN_WORK = 0}, counting(calls), 1);
 
         REQUIRE(calls > 0);
     }

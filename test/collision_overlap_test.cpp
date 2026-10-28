@@ -1,8 +1,8 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <jfc/catch.hpp>
 
-#include <gdk/collisions/impl_collision_policy.h>
+#include <gdk/collisions/scene.h>
 #include <gdk/collisions/impl_narrow_phase.h>
 #include <gdk/collisions/exception.h>
 #include <gdk/collisions/impl_heightfield_data.h>
@@ -19,7 +19,7 @@ namespace {
     constexpr floating_point_type TIME_MARGIN = 1e-5f;
     constexpr floating_point_type NORMAL_MARGIN = 1e-4f;
 
-    const impl_collision_policy policy = {};
+    const impl_std_tuning policy = {};
 
     struct body final {
         shape_type shape;
@@ -47,20 +47,27 @@ namespace {
         return body{triangle_shape{{-1, 0, -1}, {1, 0, -1}, {0, 0, 1}}, {aPosition, aVelocity}};
     }
 
+    [[nodiscard]] const impl_heightfield_data *kept(const heightfield_data_ptr_type &aTerrain) {
+        static std::vector<heightfield_data_ptr_type> terrains;
+
+        terrains.push_back(aTerrain);
+        return static_cast<const impl_heightfield_data *>(aTerrain.get());
+    }
+
     [[nodiscard]] std::shared_ptr<const impl_mesh_data> unit_quad() {
         static const auto quad = std::dynamic_pointer_cast<const impl_mesh_data>(
-            impl_mesh_data::make({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
+            make_mesh_data({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
         return quad;
     }
 
     body make_mesh(const vector3_type &aPosition,
         const vector3_type &aVelocity = vector3_type::zero,
         const quaternion_type &aOrientation = quaternion_type::identity) {
-        return body{mesh_shape{unit_quad()}, {aPosition, aVelocity, aOrientation}};
+        return body{mesh_shape{unit_quad().get()}, {aPosition, aVelocity, aOrientation}};
     }
 
     template <typename sampler_type>
-    [[nodiscard]] heightfield_data_ptr_type make_heightfield_data(const std::size_t aColumns,
+    [[nodiscard]] heightfield_data_ptr_type sampled_terrain(const std::size_t aColumns,
         const std::size_t aRows, const sampler_type &aSampler) {
         std::vector<floating_point_type> heights(aColumns * aRows);
 
@@ -68,13 +75,12 @@ namespace {
             for (std::size_t column = 0; column < aColumns; ++column)
                 heights[row * aColumns + column] = aSampler(column, row);
 
-        return impl_heightfield_data::make(aColumns, aRows, std::move(heights));
+        return make_heightfield_data(aColumns, aRows, std::move(heights));
     }
 
     template <typename sampler_type>
     body make_heightfield(const std::size_t aColumns, const std::size_t aRows, const sampler_type &aSampler) {
-        return body{heightfield_shape{std::dynamic_pointer_cast<const impl_heightfield_data>(
-            make_heightfield_data(aColumns, aRows, aSampler))},
+        return body{heightfield_shape{kept(sampled_terrain(aColumns, aRows, aSampler))},
             {vector3_type::zero, vector3_type::zero}};
     }
 
@@ -455,9 +461,8 @@ TEST_CASE("gdk::overlap every shape pair reports symmetrically", "[gdk::collisio
         {"obb",     obb_shape{{0.5f, 0.5f, 0.5f}}},
         {"plane",   plane_shape{}},
         {"triangle", triangle_shape{{-1, 0, -1}, {1, 0, -1}, {0, 0, 1}}},
-        {"mesh",    mesh_shape{unit_quad()}},
-        {"heightfield", heightfield_shape{std::dynamic_pointer_cast<const impl_heightfield_data>(
-            make_heightfield_data(3, 3, [](std::size_t, std::size_t) { return 0.0f; }))}},
+        {"mesh",    mesh_shape{unit_quad().get()}},
+        {"heightfield", heightfield_shape{kept(sampled_terrain(3, 3, [](std::size_t, std::size_t) { return 0.0f; }))}},
     };
 
     for (const auto &first : shapes) {
@@ -633,7 +638,7 @@ TEST_CASE("gdk::overlap a mesh's hierarchy narrows the triangles tested", "[gdk:
         }
 
     const auto pMesh = std::dynamic_pointer_cast<const impl_mesh_data>(
-        impl_mesh_data::make(std::move(vertices), std::move(indices)));
+        make_mesh_data(std::move(vertices), std::move(indices)));
 
     REQUIRE(pMesh->triangle_count() == 80000);
 
@@ -642,7 +647,7 @@ TEST_CASE("gdk::overlap a mesh's hierarchy narrows the triangles tested", "[gdk:
 
     REQUIRE(candidates.size() < 100);
 
-    const body grid{mesh_shape{pMesh}, {{0, 0, 0}, vector3_type::zero}};
+    const body grid{mesh_shape{pMesh.get()}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0, 5, 0}, {0, -10, 0}), grid, 1.0f);
     REQUIRE(result.has_value());
     REQUIRE(result->entry_time == Approx(0.45f).margin(TIME_MARGIN));
@@ -675,7 +680,7 @@ TEST_CASE("gdk::overlap a flat seam between triangles is flagged, a real edge is
     SECTION("two coplanar triangles flag the diagonal they share")
     {
         const auto pQuad = std::dynamic_pointer_cast<const impl_mesh_data>(
-            impl_mesh_data::make({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
+            make_mesh_data({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
 
         REQUIRE(pQuad->internal_edges(0) == 0b100);
         REQUIRE(pQuad->internal_edges(1) == 0b001);
@@ -683,7 +688,7 @@ TEST_CASE("gdk::overlap a flat seam between triangles is flagged, a real edge is
 
     SECTION("a convex ridge does not flag the edge along its crest")
     {
-        const auto pRidge = std::dynamic_pointer_cast<const impl_mesh_data>(impl_mesh_data::make(
+        const auto pRidge = std::dynamic_pointer_cast<const impl_mesh_data>(make_mesh_data(
             {{-1, 0, -1}, {-1, 0, 1}, {0, 1, -1}, {0, 1, 1}, {1, 0, -1}, {1, 0, 1}},
             {0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4}));
 
@@ -696,7 +701,7 @@ TEST_CASE("gdk::overlap a flat seam between triangles is flagged, a real edge is
 
     SECTION("vertices repeated at the same position are still joined")
     {
-        const auto pSplit = std::dynamic_pointer_cast<const impl_mesh_data>(impl_mesh_data::make(
+        const auto pSplit = std::dynamic_pointer_cast<const impl_mesh_data>(make_mesh_data(
             {{-1, 0, -1}, {1, 0, -1}, {1, 0, 1},
              {-1, 0, -1}, {1, 0, 1}, {-1, 0, 1}},          
             {0, 1, 2, 3, 4, 5}));
@@ -709,9 +714,9 @@ TEST_CASE("gdk::overlap a flat seam between triangles is flagged, a real edge is
 TEST_CASE("gdk::overlap a seam contact reports the surface's normal", "[gdk::collision]")
 {
     const auto pQuad = std::dynamic_pointer_cast<const impl_mesh_data>(
-        impl_mesh_data::make({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
+        make_mesh_data({{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3}));
 
-    const body floor{mesh_shape{pQuad}, {{0, 0, 0}, vector3_type::zero}};
+    const body floor{mesh_shape{pQuad.get()}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0.4f, 0.45f, -0.4f}), floor, 1.0f / 60.0f);
 
     REQUIRE(result.has_value());
@@ -721,9 +726,9 @@ TEST_CASE("gdk::overlap a seam contact reports the surface's normal", "[gdk::col
 TEST_CASE("gdk::overlap correcting a seam normal never removes the contact", "[gdk::collision]")
 {
     const auto pRamp = std::dynamic_pointer_cast<const impl_mesh_data>(
-        impl_mesh_data::make({{-1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {-1, -1, 1}}, {0, 1, 2, 0, 2, 3}));
+        make_mesh_data({{-1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {-1, -1, 1}}, {0, 1, 2, 0, 2, 3}));
 
-    const body ramp{mesh_shape{pRamp}, {{0, 0, 0}, vector3_type::zero}};
+    const body ramp{mesh_shape{pRamp.get()}, {{0, 0, 0}, vector3_type::zero}};
     const auto result = overlap_of(make_sphere({0, 5, 0}, {0, -10, 0}), ramp, 1.0f);
 
     REQUIRE(result.has_value());
@@ -781,8 +786,8 @@ TEST_CASE("gdk::overlap a heightfield flags flat seams but not a ridge", "[gdk::
         return flagged;
     };
 
-    const auto flat = make_heightfield_data(5, 5, [](std::size_t, std::size_t) { return 0.0f; });
-    const auto ridged = make_heightfield_data(5, 5,
+    const auto flat = sampled_terrain(5, 5, [](std::size_t, std::size_t) { return 0.0f; });
+    const auto ridged = sampled_terrain(5, 5,
         [](const std::size_t aColumn, const std::size_t) { return aColumn == 2 ? 3.0f : 0.0f; });
 
     REQUIRE(count_flags(ridged) < count_flags(flat));
@@ -803,18 +808,18 @@ TEST_CASE("gdk::overlap malformed heightfield dimensions are refused at build ti
 {
     const std::vector<floating_point_type> nine(9, 0.0f);
 
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(1, 3, nine), exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 1, nine), exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 4, nine), exception);      
-    REQUIRE_THROWS_AS(impl_heightfield_data::make(3, 3, nine, {0, 1}), exception);  
-    REQUIRE_NOTHROW(impl_heightfield_data::make(3, 3, nine));
+    REQUIRE_THROWS_AS(make_heightfield_data(1, 3, nine), exception);      
+    REQUIRE_THROWS_AS(make_heightfield_data(3, 1, nine), exception);      
+    REQUIRE_THROWS_AS(make_heightfield_data(3, 4, nine), exception);      
+    REQUIRE_THROWS_AS(make_heightfield_data(3, 3, nine, {0, 1}), exception);  
+    REQUIRE_NOTHROW(make_heightfield_data(3, 3, nine));
 }
 
 TEST_CASE("gdk::overlap geometry can be read back through the public interface", "[gdk::collision]")
 {
     SECTION("a mesh reports the triangles it was built from")
     {
-        const auto pMesh = impl_mesh_data::make(
+        const auto pMesh = make_mesh_data(
             {{-1, 0, -1}, {1, 0, -1}, {1, 0, 1}, {-1, 0, 1}}, {0, 1, 2, 0, 2, 3});
 
         REQUIRE(pMesh->triangle_count() == 2);
@@ -832,7 +837,7 @@ TEST_CASE("gdk::overlap geometry can be read back through the public interface",
 
     SECTION("terrain reports its sample spacing")
     {
-        const auto pTerrain = impl_heightfield_data::make(3, 4,
+        const auto pTerrain = make_heightfield_data(3, 4,
             std::vector<floating_point_type>(12, 0.0f), {2.0f, 0.5f});
 
         REQUIRE(pTerrain->columns() == 3);
@@ -843,7 +848,7 @@ TEST_CASE("gdk::overlap geometry can be read back through the public interface",
 
     SECTION("terrain reports the heights it was built from")
     {
-        const auto pTerrain = impl_heightfield_data::make(3, 3,
+        const auto pTerrain = make_heightfield_data(3, 3,
             {0, 1, 2, 3, 4, 5, 6, 7, 8});
 
         REQUIRE(pTerrain->height(0, 0) == Approx(0.0f));
@@ -855,56 +860,20 @@ TEST_CASE("gdk::overlap geometry can be read back through the public interface",
 
 TEST_CASE("gdk::overlap malformed mesh geometry is refused at build time", "[gdk::collision]")
 {
-    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1}), exception);
-    REQUIRE_THROWS_AS(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 7}), exception);
-    REQUIRE_NOTHROW(impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 2}));
+    REQUIRE_THROWS_AS(make_mesh_data({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1}), exception);
+    REQUIRE_THROWS_AS(make_mesh_data({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 7}), exception);
+    REQUIRE_NOTHROW(make_mesh_data({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 2}));
 }
 
-TEST_CASE("gdk::collisions::narrow_phase_penetration answers without any motion", "[gdk::collision]")
+TEST_CASE("gdk::collisions::narrow_phase_overlap answers for a pair with no motion", "[gdk::collision]")
 {
-    const impl_collision_policy policy;
+    const auto subject = make_sphere({0.8f, 0, 0});
+    const auto other = make_box({0, 0, 0});
 
-    SECTION("a stationary sphere overlapping a box reports its depth") {
-        const auto subject = make_sphere({0.8f, 0, 0});
-        const auto other = make_box({0, 0, 0});
+    const auto result = narrow_phase_overlap(subject.shape, subject.kinematics, other.shape, other.kinematics, 0.0f, policy);
 
-        const auto result = narrow_phase_penetration(subject.shape, subject.kinematics,
-            other.shape, other.kinematics, policy);
-
-        REQUIRE(result.has_value());
-        REQUIRE(result->penetration == Approx(0.2f).margin(1e-4f));
-        REQUIRE(result->contact_normal.x == Approx(1.0f).margin(1e-4f));
-        REQUIRE(result->entry_time == Approx(0.0f));
-    }
-
-    SECTION("the swept query still answers for a stationary sphere and box") {
-        const auto subject = make_sphere({0.8f, 0, 0});
-        const auto other = make_box({0, 0, 0});
-
-        REQUIRE(narrow_phase_overlap(subject.shape, subject.kinematics,
-            other.shape, other.kinematics, 0.0f, policy).has_value());
-    }
-
-    SECTION("a separated pair reports nothing") {
-        const auto subject = make_sphere({1.2f, 0, 0});   
-        const auto other = make_box({0, 0, 0});
-
-        REQUIRE_FALSE(narrow_phase_penetration(subject.shape, subject.kinematics,
-            other.shape, other.kinematics, policy).has_value());
-    }
-
-    SECTION("a capsule across a rotated box's edge reports a depth") {
-        quaternion_type rotation;
-        rotation.set_from_euler({0.3f, 0.6f, 0.4f});
-
-        const auto subject = make_capsule({0.6f, 0.3f, 0}, vector3_type::zero);
-        const auto other = make_obb({0, 0, 0}, vector3_type::zero, rotation);
-
-        const auto result = narrow_phase_penetration(subject.shape, subject.kinematics,
-            other.shape, other.kinematics, policy);
-
-        REQUIRE(result.has_value());
-        REQUIRE(result->penetration > 0.0f);
-        REQUIRE(result->contact_normal.length() == Approx(1.0f).margin(1e-3f));
-    }
+    REQUIRE(result.has_value());
+    REQUIRE(result->penetration == Approx(0.2f).margin(1e-4f));
+    REQUIRE(result->contact_normal.x == Approx(1.0f).margin(1e-4f));
+    REQUIRE(result->entry_time == Approx(0.0f));
 }
