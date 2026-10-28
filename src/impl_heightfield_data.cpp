@@ -1,6 +1,7 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <gdk/collisions/exception.h>
+#include <gdk/collisions/heightfield_data.h>
 #include <gdk/collisions/impl_heightfield_data.h>
 
 #include <algorithm>
@@ -24,10 +25,16 @@ heightfield_data_ptr_type impl_heightfield_data::make(const std::size_t aColumns
     if (aColumns < 2 || aRows < 2)
         throw exception("gdk::collision: a heightfield needs at least two samples on each axis");
 
-    if (aHeights.size() != aColumns * aRows)
+    if (aRows > std::numeric_limits<std::size_t>::max() / aColumns || aHeights.size() != aColumns * aRows)
         throw exception("gdk::collision: heightfield sample count does not match its dimensions");
 
-    if (aCellSize.x <= 0 || aCellSize.y <= 0)
+    if ((aColumns - 1) * (aRows - 1) > std::numeric_limits<std::uint32_t>::max() / 2)
+        throw exception("gdk::collision: heightfield has more triangles than a 32 bit index can name");
+
+    for (const auto height : aHeights)
+        if (!std::isfinite(height)) throw exception("gdk::collision: heightfield sample is not a finite number");
+
+    if (!(aCellSize.x > 0) || !(aCellSize.y > 0) || !std::isfinite(aCellSize.x) || !std::isfinite(aCellSize.y))
         throw exception("gdk::collision: heightfield cell size must be positive on both axes");
 
     return heightfield_data_ptr_type(new impl_heightfield_data(aColumns, aRows, std::move(aHeights),
@@ -171,4 +178,22 @@ void impl_heightfield_data::query(const bounds &aQuery, std::vector<std::uint32_
 void impl_heightfield_data::all(std::vector<std::uint32_t> &aOut) const {
     const auto count = static_cast<std::uint32_t>(triangle_count());
     for (std::uint32_t t = 0; t < count; ++t) aOut.push_back(t);
+}
+
+void impl_heightfield_data::query_below(const vector3_type &aPoint, const vector3_type &aNormal,
+    const floating_point_type aReach, std::vector<std::uint32_t> &aOut) const {
+    const auto count = static_cast<std::uint32_t>(triangle_count());
+
+    for (std::uint32_t t = 0; t < count; ++t) {
+        vector3_type a, b, c;
+        triangle(t, a, b, c);
+
+        if (std::min({(a - aPoint).dot_product(aNormal), (b - aPoint).dot_product(aNormal),
+            (c - aPoint).dot_product(aNormal)}) <= aReach) aOut.push_back(t);
+    }
+}
+
+heightfield_data_ptr_type gdk::collisions::make_heightfield_data(const std::size_t aColumns, const std::size_t aRows,
+    std::vector<floating_point_type> aHeights, const vector2_type &aCellSize, const floating_point_type aCoplanarTolerance) {
+    return impl_heightfield_data::make(aColumns, aRows, std::move(aHeights), aCellSize, aCoplanarTolerance);
 }

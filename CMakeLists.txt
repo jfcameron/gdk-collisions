@@ -1,42 +1,29 @@
-# © Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - MIT License
 
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 
-project(gdkcollisions
-    VERSION 0.1
-    DESCRIPTION "3d collision detection and resolution")
+if (TARGET gdkcollisions)
+    return()
+endif()
+
+project(gdk-collisions
+    VERSION 1.0
+    DESCRIPTION "3d collision detection and resolution for games: a grid scene of spheres, boxes, capsules, planes, meshes, heightfields and compounds, with triggers, rays and volume queries"
+    LANGUAGES CXX)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/jfc-cmake/jfclib.cmake")
 
-option(JFC_BUILD_DOCS "Build documentation" OFF)
-option(JFC_BUILD_TESTS "Build unit tests" OFF)
-option(JFC_BUILD_BENCH "Build the benchmark harness" OFF)
+option(GDKCOLLISIONS_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(GDKCOLLISIONS_BUILD_DOCS "Build documentation" OFF)
+option(GDKCOLLISIONS_BUILD_BENCH "Build the benchmark harness" OFF)
 
-option(JFC_COLLISION_STRICT_FP "slower but build the library for better cross-machine determinism" OFF)
+if (GDKCOLLISIONS_BUILD_DOCS AND NOT GDKCOLLISIONS_BUILD_TESTS)
+    add_subdirectory(docs)
 
-if (JFC_COLLISION_STRICT_FP)
-    if (MSVC)
-        set(JFC_COLLISION_FP_FLAGS /fp:strict)
-    else()
-        set(JFC_COLLISION_FP_FLAGS -fno-fast-math -ffp-contract=off)
-    endif()
+    return()
 endif()
 
-set(_jfc_outer_build_tests "${JFC_BUILD_TESTS}")
-set(_jfc_outer_build_docs "${JFC_BUILD_DOCS}")
-set(_jfc_outer_build_bench "${JFC_BUILD_BENCH}")
-
-set(JFC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(JFC_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(JFC_BUILD_BENCH OFF CACHE BOOL "" FORCE)
-
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/gdk-math")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/jfc-dispatch")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/extern/jfc-hash")
-
-set(JFC_BUILD_TESTS "${_jfc_outer_build_tests}" CACHE BOOL "" FORCE)
-set(JFC_BUILD_DOCS "${_jfc_outer_build_docs}" CACHE BOOL "" FORCE)
-set(JFC_BUILD_BENCH "${_jfc_outer_build_bench}" CACHE BOOL "" FORCE)
+add_subdirectory(extern)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,62 +48,129 @@ else()
     endforeach()
 endif()
 
-add_library(gdkcollisions STATIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/exception.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/response_handler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/scene.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_axis_aligned_box.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_broadphase_grid.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_capsule_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_collision_event_tracker.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_collision_scene.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_compound_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_dynamic_broadphase_grid.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_heightfield_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_heightfield_data.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_mesh_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_mesh_data.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_narrow_phase.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_obb_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_plane_collider.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/impl_sphere_collider.cpp)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(GDKCOLLISIONS_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/exception.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/impl_heightfield_data.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/impl_mesh_data.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/impl_shape.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/response_handler.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_aabb_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_capsule_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_collision_event_tracker.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_compound_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_heightfield_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_mesh_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_obb_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_plane_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_scene.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_scene_policy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_scene_queries.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_scene_step.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/impl_sphere_collider.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/null/src/null_kernels.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_mover_grid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_narrow_phase.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_shape_geometry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_static_grid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_std_kernels.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/impl_std_queries.cpp")
+
+set(GDKCOLLISIONS_PRIVATE_INCLUDE_DIRECTORIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/scene/src/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/src/include")
+
+add_library(gdkcollisions STATIC ${GDKCOLLISIONS_SOURCES})
 
 add_library(gdk::collisions ALIAS gdkcollisions)
 
-set_target_properties(gdkcollisions PROPERTIES EXPORT_NAME collisions)
-
-set_target_properties(gdkcollisions PROPERTIES PREFIX "lib")
-
-jfc_generate_build_info()
+set_target_properties(gdkcollisions PROPERTIES EXPORT_NAME collisions PREFIX "lib")
 
 target_include_directories(gdkcollisions
     PUBLIC
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/impl/include>"
-        "$<INSTALL_INTERFACE:include>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/include>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/null/include>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     PRIVATE
-        "${PROJECT_BINARY_DIR}/generated_include/")
+        ${GDKCOLLISIONS_PRIVATE_INCLUDE_DIRECTORIES})
 
 target_compile_features(gdkcollisions PUBLIC cxx_std_20)
 
-target_link_libraries(gdkcollisions PUBLIC gdkmath jfcdispatch)
+target_link_libraries(gdkcollisions
+    PUBLIC
+        gdk::math
+        jfc::dispatch
+    PRIVATE
+        $<BUILD_INTERFACE:jfc::hash>)
 
-target_link_libraries(gdkcollisions PRIVATE jfchash)
+if (MSVC)
+    target_compile_options(gdkcollisions PRIVATE /wd4250)
+endif()
 
-target_compile_options(gdkcollisions PRIVATE ${JFC_COLLISION_FP_FLAGS})
+add_library(gdkcollisions_implementation INTERFACE)
 
-set_property(TARGET gdkcollisions PROPERTY CXX_EXTENSIONS OFF)
+if (MSVC)
+    target_compile_options(gdkcollisions_implementation INTERFACE /wd4250)
+endif()
 
-if (JFC_BUILD_TESTS)
+target_include_directories(gdkcollisions_implementation INTERFACE ${GDKCOLLISIONS_PRIVATE_INCLUDE_DIRECTORIES})
+
+target_link_libraries(gdkcollisions_implementation INTERFACE gdkcollisions jfc::hash)
+
+add_library(gdkcollisions_kernel_conformance INTERFACE)
+
+target_sources(gdkcollisions_kernel_conformance INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/conformance/kernel_conformance.cpp")
+
+target_include_directories(gdkcollisions_kernel_conformance INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/test/conformance")
+
+target_link_libraries(gdkcollisions_kernel_conformance INTERFACE gdkcollisions)
+
+install(TARGETS gdkcollisions
+    EXPORT gdk-collisions-targets
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+
+install(DIRECTORY
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/std/include/"
+    "${CMAKE_CURRENT_SOURCE_DIR}/impl/kernels/null/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+install(EXPORT gdk-collisions-targets
+    FILE gdk-collisions-targets.cmake
+    NAMESPACE gdk::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/gdk-collisions")
+
+write_basic_package_version_file(
+    "${PROJECT_BINARY_DIR}/gdk-collisions-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+file(WRITE "${PROJECT_BINARY_DIR}/gdk-collisions-config.cmake"
+"include(CMakeFindDependencyMacro)
+find_dependency(gdk-math 1)
+find_dependency(jfc-dispatch 1)
+include(\"\${CMAKE_CURRENT_LIST_DIR}/gdk-collisions-targets.cmake\")
+")
+
+install(FILES
+    "${PROJECT_BINARY_DIR}/gdk-collisions-config.cmake"
+    "${PROJECT_BINARY_DIR}/gdk-collisions-config-version.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/gdk-collisions")
+
+if (GDKCOLLISIONS_BUILD_TESTS)
     add_subdirectory(test)
 endif()
 
-if (JFC_BUILD_BENCH)
+if (GDKCOLLISIONS_BUILD_BENCH)
     add_subdirectory(bench)
 endif()
 
-if (JFC_BUILD_DOCS)
+if (GDKCOLLISIONS_BUILD_DOCS)
     add_subdirectory(docs)
 endif()
-

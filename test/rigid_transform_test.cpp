@@ -1,13 +1,13 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <jfc/catch.hpp>
 
-#include <gdk/collisions/box_collider.h>
+#include <gdk/collisions/aabb_collider.h>
 #include <gdk/collisions/capsule_collider.h>
 #include <gdk/collisions/compound_collider.h>
 #include <gdk/collisions/exception.h>
 #include <gdk/collisions/heightfield_collider.h>
-#include <gdk/collisions/impl_collision_scene.h>
+#include <gdk/collisions/scene.h>
 #include <gdk/collisions/impl_heightfield_data.h>
 #include <gdk/collisions/impl_mesh_data.h>
 #include <gdk/collisions/mesh_collider.h>
@@ -25,8 +25,8 @@ using namespace gdk;
 using namespace gdk::collisions;
 
 namespace {
-    [[nodiscard]] scene_ptr_type make_scene() {
-        return impl_collision_scene::make(
+    [[nodiscard]] scene_ptr_type a_scene() {
+        return make_scene(
             [](const collision_event &) {}, [](const trigger_event &) {});
     }
 
@@ -44,12 +44,12 @@ namespace {
     }
 
     [[nodiscard]] mesh_data_ptr_type a_mesh() {
-        return impl_mesh_data::make({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 2});
+        return make_mesh_data({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, {0, 1, 2});
     }
 
     [[nodiscard]] heightfield_data_ptr_type a_heightfield() {
-        return impl_heightfield_data::make(2, 2,
-            std::vector<floating_point_type>{0, 0, 0, 0}, 1);
+        return make_heightfield_data(2, 2,
+            std::vector<floating_point_type>{0, 0, 0, 0}, {1, 1});
     }
 }
 
@@ -94,16 +94,16 @@ TEST_CASE("gdk::collisions::find_transform_defect", "[rigid_transform]")
 
 TEST_CASE("gdk::collisions::scene refuses a non-rigid static transform", "[rigid_transform]")
 {
-    const auto pScene = make_scene();
+    const auto pScene = a_scene();
 
     const auto rigid = rotated();
     const auto notRigid = scaled(2.0f);
 
     SECTION("axis aligned box")
     {
-        REQUIRE_NOTHROW(pScene->make_static_axis_aligned_box_collider(rigid, {1, 1, 1}));
-        REQUIRE_THROWS_AS(pScene->make_static_axis_aligned_box_collider(notRigid, {1, 1, 1}), exception);
-        REQUIRE_THROWS_AS(pScene->make_static_axis_aligned_box_trigger(notRigid, {1, 1, 1}), exception);
+        REQUIRE_NOTHROW(pScene->make_static_aabb_collider(rigid, {1, 1, 1}));
+        REQUIRE_THROWS_AS(pScene->make_static_aabb_collider(notRigid, {1, 1, 1}), exception);
+        REQUIRE_THROWS_AS(pScene->make_static_aabb_trigger(notRigid, {1, 1, 1}), exception);
     }
 
     SECTION("sphere")
@@ -157,7 +157,7 @@ TEST_CASE("gdk::collisions::scene refuses a non-rigid static transform", "[rigid
     SECTION("the message says what was wrong and what to do instead")
     {
         try {
-            pScene->make_static_mesh_collider(notRigid, a_mesh());
+            static_cast<void>(pScene->make_static_mesh_collider(notRigid, a_mesh()));
             FAIL("expected a throw");
         }
         catch (const exception &aException) {

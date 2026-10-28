@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_RAYCAST_HIT_H
 #define GDK_COLLISIONS_RAYCAST_HIT_H

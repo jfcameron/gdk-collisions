@@ -1,9 +1,11 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #ifndef GDK_COLLISIONS_EVENTS_H
 #define GDK_COLLISIONS_EVENTS_H
 
 #include <gdk/collisions/types.h>
+
+#include <functional>
 
 namespace gdk::collisions {
     enum class event_type {
@@ -12,29 +14,18 @@ namespace gdk::collisions {
         stay,
     };
 
-    struct trigger_event {
-        const const_collider_ptr_type a;
-        const const_collider_ptr_type b;
-        const event_type type;
-
-        trigger_event(const const_collider_ptr_type &aA, const const_collider_ptr_type &aB, const event_type aType)
-        : a(aA)
-        , b(aB)
-        , type(aType)
-        {}
+    /// \brief two colliders that began, kept or stopped touching
+    struct collider_event final {
+        const_collider_ptr_type a;
+        const_collider_ptr_type b;
+        event_type type = event_type::enter;
     };
 
-    struct collision_event {
-        const const_collider_ptr_type a;
-        const const_collider_ptr_type b;
-        const event_type type;
+    using collision_event = collider_event;
+    using trigger_event = collider_event;
 
-        collision_event(const const_collider_ptr_type &aA, const const_collider_ptr_type &aB, const event_type aType)
-        : a(aA)
-        , b(aB)
-        , type(aType)
-        {}
-    };
+    using collision_observer_type = std::function<void(collision_event)>;
+    using trigger_observer_type = std::function<void(trigger_event)>;
 }
 
 #endif

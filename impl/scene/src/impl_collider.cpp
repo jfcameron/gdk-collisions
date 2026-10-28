@@ -1,0 +1,180 @@
+// © Joseph Cameron - MIT License
+
+#include <gdk/collisions/impl_collider.h>
+
+#include <cmath>
+
+using namespace gdk::collisions;
+
+impl_collider::impl_collider(const scene_policy &aPolicy, const response_handler &aResponseHandler,
+    const floating_point_type aInverseOverlapWeight, const collider_id_type aId,
+    const part_record &aPart)
+: m_Parts{aPart}
+, m_ResponseHandler(aResponseHandler)
+, m_MinSweptSpeed(aPolicy.MIN_SWEPT_SPEED)
+, m_Id(aId)
+, m_InverseOverlapWeight(aInverseOverlapWeight)
+{}
+
+impl_collider::impl_collider(const scene_policy &aPolicy, const response_handler &aResponseHandler,
+    const floating_point_type aInverseOverlapWeight, const collider_id_type aId)
+: m_ResponseHandler(aResponseHandler)
+, m_MinSweptSpeed(aPolicy.MIN_SWEPT_SPEED)
+, m_Id(aId)
+, m_InverseOverlapWeight(aInverseOverlapWeight)
+{}
+
+vector3_type impl_collider::respond_to_collision_resolution(
+    const contact_context &aContact) {
+    return m_ResponseHandler(*this, aContact);
+}
+
+collider_id_type impl_collider::id() const {
+    return m_Id;
+}
+
+const std::vector<part_record> &impl_collider::parts() const {
+    return m_Parts;
+}
+
+void impl_collider::set_position(const vector3_type &aPos) {
+    m_Transform.set_translation(aPos);
+}
+
+void impl_collider::set_rotation(const quaternion_type &aRotation) {
+    const auto normalised = aRotation.normalized();
+
+    m_Transform.set_rotation(normalised);
+    m_Rotation = normalised;
+}
+
+void impl_collider::add_rotation(const quaternion_type &aRotation) {
+    set_rotation(aRotation * m_Rotation);
+}
+
+void impl_collider::add_angular_velocity(const vector3_type &aAngularVelocity) {
+    m_AngularVelocity += aAngularVelocity;
+}
+
+void impl_collider::set_angular_velocity(const vector3_type &aAngularVelocity) {
+    m_AngularVelocity = aAngularVelocity;
+}
+
+vector3_type impl_collider::angular_velocity() const {
+    return m_AngularVelocity;
+}
+
+void impl_collider::integrate_angular_velocity(const delta_time_type aDeltaTime) {
+    const auto rate = m_AngularVelocity.length();
+
+    if (rate > m_MinSweptSpeed) {
+        const auto angle = rate * aDeltaTime;
+        const auto axis = m_AngularVelocity * (1.0f / rate);
+        const auto sine = std::sin(angle * 0.5f);
+
+        quaternion_type turn;
+        turn.w = std::cos(angle * 0.5f);
+        turn.x = axis.x * sine;
+        turn.y = axis.y * sine;
+        turn.z = axis.z * sine;
+
+        add_rotation(turn);
+    }
+}
+
+void impl_collider::clear_angular_velocity() {
+    m_AngularVelocity = vector3_type::zero;
+}
+
+void impl_collider::add_velocity(const vector3_type &aVelocity) {
+    m_Velocity += aVelocity;
+}
+
+void impl_collider::clear_velocity() {
+    m_ResolvedVelocity = m_Velocity;
+    m_Velocity = vector3_type::zero;
+}
+
+vector3_type impl_collider::resolved_velocity() const {
+    return m_ResolvedVelocity;
+}
+
+void impl_collider::set_transform(const matrix4x4_type &aTransform) {
+    m_Transform = aTransform;
+    m_Rotation = aTransform.rotation().normalized();
+}
+
+matrix4x4_type impl_collider::transform() const { 
+    return m_Transform; 
+}
+
+void impl_collider::set_velocity(const vector3_type &aVelocity) {
+    m_Velocity = aVelocity;
+}
+
+vector3_type impl_collider::velocity() const {
+    return m_Velocity;
+}
+
+vector3_type impl_collider::position() const {
+    return m_Transform.translation();
+}
+
+quaternion_type impl_collider::rotation() const {
+    return m_Rotation;
+}
+
+bounds impl_collider::world_bounds() const {
+    const auto orientation = rotation();
+    const auto origin = position();
+
+    const auto pMesh = std::static_pointer_cast<const impl_mesh_data>(surface_mesh());
+    const auto pHeightfield = std::static_pointer_cast<const impl_heightfield_data>(surface_heightfield());
+
+    auto low = origin;
+    auto high = origin;
+    auto first = true;
+
+    for (const auto &part : m_Parts) {
+        const auto centre = origin + orientation * part.offset;
+        const auto offsets = shape_bounds(shape_of(part, pMesh.get(), pHeightfield.get()), orientation * part.turn);
+
+        const auto partLow = centre + offsets.low;
+        const auto partHigh = centre + offsets.high;
+
+        low = first ? partLow : vector3_type::min(low, partLow);
+        high = first ? partHigh : vector3_type::max(high, partHigh);
+        first = false;
+    }
+
+    return bounds{low, high};
+}
+
+void impl_collider::set_inverse_overlap_weight(const floating_point_type aInverseOverlapWeight) {
+    m_InverseOverlapWeight = aInverseOverlapWeight;
+}
+
+floating_point_type impl_collider::inverse_overlap_weight() const {
+    return m_InverseOverlapWeight;
+}
+
+void impl_collider::set_kinematic(const bool aKinematic) {
+    m_Kinematic = aKinematic;
+}
+
+bool impl_collider::is_kinematic() const {
+    return m_Kinematic;
+}
+
+floating_point_type impl_collider::displacement_share() const {
+    return m_Kinematic ? 0 : m_InverseOverlapWeight;
+}
+
+void impl_collider::set_collision_layers(const collision_layers_type aOn, const collision_layers_type aCollidesWith) {
+    m_On = aOn;
+    m_CollidesWith = aCollidesWith;
+}
+
+collision_layers_type impl_collider::collision_layers() const { return m_On; }
+
+collision_layers_type impl_collider::collides_with() const { return m_CollidesWith; }
