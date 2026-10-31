@@ -17,10 +17,20 @@ option(GDKCOLLISIONS_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(GDKCOLLISIONS_BUILD_DOCS "Build documentation" OFF)
 option(GDKCOLLISIONS_BUILD_BENCH "Build the benchmark harness" OFF)
 
-if (GDKCOLLISIONS_BUILD_DOCS AND NOT GDKCOLLISIONS_BUILD_TESTS)
-    add_subdirectory(docs)
+if (GDKCOLLISIONS_BUILD_DOCS)
+    jfc_generate_documentation_doxygen(
+        README_PATH      README.md
+        OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/docs
 
-    return()
+        INCLUDE_DIRECTORIES
+            include/
+            impl/kernels/std/include/
+            impl/kernels/null/include/
+    )
+
+    if (NOT GDKCOLLISIONS_BUILD_TESTS)
+        return()
+    endif()
 endif()
 
 add_subdirectory(extern)
@@ -169,8 +179,4 @@ endif()
 
 if (GDKCOLLISIONS_BUILD_BENCH)
     add_subdirectory(bench)
-endif()
-
-if (GDKCOLLISIONS_BUILD_DOCS)
-    add_subdirectory(docs)
 endif()
