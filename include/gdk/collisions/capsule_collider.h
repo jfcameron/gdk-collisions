@@ -15,7 +15,6 @@ namespace gdk::collisions {
         /// \brief set the radius of the capsule's hemispherical caps and cylindrical body
         virtual void set_radius(const floating_point_type aRadius) = 0;
 
-        /// \brief get the radius
         [[nodiscard]] virtual floating_point_type radius() const = 0;
 
         /// \brief set the distance from the centre to either end of the interior segment

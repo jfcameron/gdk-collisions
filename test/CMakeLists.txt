@@ -9,6 +9,7 @@ jfc_add_tests(
         "${CMAKE_CURRENT_LIST_DIR}/std_grid_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/collision_overlap_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/collision_parallel_test.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/exception_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/rigid_transform_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/scene_events_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/scene_kinematic_test.cpp"
