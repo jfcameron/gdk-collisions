@@ -209,6 +209,45 @@ TEST_CASE("gdk::scene sweep lands on a heightfield", "[gdk::collision]")
     require_vector_near(hit->normal, {0, 1, 0}, 1e-3f);
 }
 
+TEST_CASE("gdk::scene sweep carries a capsule standing on one floor onto the next in one go", "[gdk::collision]")
+{
+    fixture f;
+    const auto pNear = f.scene->make_static_mesh_collider(placed_at({-2, 0, 0}), make_quad_mesh(2.0f));
+    const auto pFar = f.scene->make_static_mesh_collider(placed_at({2, 0, 0}), make_quad_mesh(2.0f));
+
+    const auto standing = standing_at({-1, 1, 0});
+
+    REQUIRE(f.scene->sweep(standing, {0, -1, 0}, 1.0f)->collider == const_collider_ptr_type(pNear));
+    REQUIRE(f.scene->sweep(standing_at({1, 1, 0}), {0, -1, 0}, 1.0f)->collider == const_collider_ptr_type(pFar));
+
+    REQUIRE_FALSE(f.scene->sweep(standing, {1, 0, 0}, 2.0f).has_value());
+    REQUIRE_FALSE(f.scene->sweep(standing, {1, 0, 0.5f}, 2.5f).has_value());
+}
+
+TEST_CASE("gdk::scene sweep brushes past a box's edge, and strikes one aimed at", "[gdk::collision]")
+{
+    fixture f;
+    matrix4x4_type identity;
+    const auto pBox = f.scene->make_static_aabb_collider(identity, {0.5f, 0.5f, 0.5f});
+
+    SECTION("passing along a face it touches, it meets nothing")
+    {
+        REQUIRE_FALSE(f.scene->sweep(standing_at({-5, 0, 1}), {1, 0, 0}, 10.0f).has_value());
+    }
+
+    SECTION("aimed at a corner, it meets the edge where it should")
+    {
+        const auto hit = f.scene->sweep(standing_at({-5, 0, -5}), {1, 0, 1}, 10.0f);
+
+        const auto halfRoot = 0.5f / std::numbers::sqrt2_v<floating_point_type>;
+
+        REQUIRE(hit.has_value());
+        REQUIRE(hit->collider == const_collider_ptr_type(pBox));
+        REQUIRE(hit->distance == Approx((5.0f - 0.5f - halfRoot) * std::numbers::sqrt2_v<floating_point_type>).margin(1e-3f));
+        require_vector_near(hit->normal, {-halfRoot * 2, 0, -halfRoot * 2}, 1e-3f);
+    }
+}
+
 TEST_CASE("gdk::scene sweep carries a capsule held clear of two floors over the seam between them, a step at a time",
     "[gdk::collision]")
 {
