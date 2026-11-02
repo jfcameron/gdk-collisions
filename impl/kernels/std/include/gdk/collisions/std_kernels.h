@@ -24,7 +24,7 @@ namespace gdk::collisions {
         std::size_t PARALLEL_MIN_WORK{80};
 
         /// \brief how many distance queries one swept test may take
-        unsigned short int SWEEP_MAX_STEPS{8};
+        unsigned short int SWEEP_MAX_STEPS{16};
 
         /// \brief how close to a triangle's edge a contact point must be to count as on it
         floating_point_type BARYCENTRIC_EDGE_EPSILON{1e-4f};

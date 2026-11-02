@@ -205,16 +205,24 @@ namespace {
             const auto sample = sample_at(time);
             const auto gap = sample.distance - contactRadius;
 
-            if (gap <= aPolicy.PENETRATION_DEPTH_EPSILON + rounding_of(sample)) return contact_at(time, sample);
+            const auto readable = readable_of(sample);
+            if (readable) lastReadable = readable;
 
-            if (const auto readable = readable_of(sample)) lastReadable = readable;
+            const auto closing = readable ? -relativeVelocity.dot_product(*readable) : relativeSpeed;
+
+            const auto touching = gap <= aPolicy.PENETRATION_DEPTH_EPSILON + rounding_of(sample);
+
+            if (touching && (closing < aPolicy.MIN_SWEPT_SPEED || gap <= closing * aPolicy.TIME_OF_IMPACT_EPSILON))
+                return contact_at(time, sample);
 
             if (relativeSpeed <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;
 
-            if (gap >= previousGap) return std::nullopt;
+            if (closing < aPolicy.MIN_SWEPT_SPEED) return std::nullopt;
+
+            if (gap >= previousGap) return touching ? std::optional(contact_at(time, sample)) : std::nullopt;
             previousGap = gap;
 
-            const auto next = time + gap / relativeSpeed;
+            const auto next = time + gap / closing;
             if (next > aDeltaTime) return std::nullopt;
 
             if (step == aPolicy.CONSERVATIVE_ADVANCEMENT_MAX_STEPS) return contact_at(next, sample_at(next));

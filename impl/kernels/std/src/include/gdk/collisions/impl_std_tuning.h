@@ -10,7 +10,7 @@
 namespace gdk::collisions {
     /// \brief what the std narrow phase reads: the scene's contact rules and the kernels' own tuning
     struct impl_std_tuning final {
-        unsigned short int CONSERVATIVE_ADVANCEMENT_MAX_STEPS{8};
+        unsigned short int CONSERVATIVE_ADVANCEMENT_MAX_STEPS{16};
         delta_time_type TIME_OF_IMPACT_EPSILON{1e-7f};
         floating_point_type AXIS_ENTRY_EPSILON{1e-5f};
         floating_point_type MIN_SWEPT_SPEED{1e-3f};
