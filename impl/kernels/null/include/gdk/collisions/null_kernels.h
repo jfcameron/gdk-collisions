@@ -7,7 +7,7 @@
 #include <gdk/collisions/types.h>
 
 namespace gdk::collisions {
-    /// \brief kernels that find nothing: bodies pass through each other and rays strike nothing
+    /// \brief kernels that find nothing: bodies pass through each other, and rays and sweeps strike nothing
     [[nodiscard]] scene_kernels_ptr_type make_null_kernels();
 }
 

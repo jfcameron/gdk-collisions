@@ -55,6 +55,7 @@ namespace {
 
         const auto ap = aContactPoint - aTriangle.a;
 
+        // from Real-Time Collision Detection by Christer Ericson, published by Morgan Kaufmann Publishers, © 2005 Elsevier Inc
         const auto d00 = ab.dot_product(ab);
         const auto d01 = ab.dot_product(ac);
         const auto d11 = ac.dot_product(ac);

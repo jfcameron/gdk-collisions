@@ -52,12 +52,14 @@ namespace gdk::collisions {
 
         [[nodiscard]] floating_point_type clamp01(const floating_point_type aValue);
 
+        /// from Real-Time Collision Detection by Christer Ericson, published by Morgan Kaufmann Publishers, © 2005 Elsevier Inc
         [[nodiscard]] closest_points closest_points_between_segments(const segment &aFirst,
             const segment &aSecond, const impl_std_tuning &aPolicy);
 
         [[nodiscard]] triangle_points world_triangle(const triangle_shape &aTriangle,
             const shape_kinematics &aKinematics);
 
+        /// from Real-Time Collision Detection by Christer Ericson, published by Morgan Kaufmann Publishers, © 2005 Elsevier Inc
         [[nodiscard]] vector3_type closest_point_on_triangle(const triangle_points &aTriangle,
             const vector3_type &aPoint);
 

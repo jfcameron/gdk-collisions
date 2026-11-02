@@ -73,17 +73,19 @@ How far a collider is pushed out of an overlap is set by `set_inverse_overlap_we
 ### Queries
 - `raycast` finds the nearest collider along a ray, skipping one collider if asked.
 - `raycast_static` finds the nearest static collider.
+- `sweep` moves a capsule from where it stands and finds the first collider it meets: how far it got, and how deep it already was if it began inside one. Moving colliders are met where they stand.
+- `sweep_static` meets static colliders alone.
 - `overlaps_static` asks whether any static collider reaches into an upright cylinder, such as the room a character needs to stand, or into a parallelepiped, such as the space between two points.
 
 ### Kernels
 A scene moves its colliders and decides what their contacts mean. Its spatial work is done by its kernels:
 - which bodies could meet;
 - whether they do;
-- what rays and volumes reach.
+- what rays, swept shapes and volumes reach.
 
 The kernels are given to `make_scene`:
 - `make_std_kernels` gives uniform grids, bounding volume hierarchies and the library's own narrow phase, on the standard library alone. It is the default.
-- `make_null_kernels` finds nothing: bodies pass through each other and rays strike nothing.
+- `make_null_kernels` finds nothing: bodies pass through each other, and rays and sweeps strike nothing.
 
 Kernels are an interface, `scene_kernels`, that anyone can implement without changing this library. One might put the work on a GPU, for instance.
 - **What they read:** the scene hands its kernels flat tables of bodies and their parts (`gdk/collisions/kernels/tables.h`). Every kernel reads the same data.
@@ -97,7 +99,7 @@ Kernels are an interface, `scene_kernels`, that anyone can implement without cha
 
 Threads:
 - **Updates:** a scene is updated, and its colliders are made and changed, from one thread at a time.
-- **Queries:** `raycast` and `overlaps_static` may run on several threads at once between updates.
+- **Queries:** `raycast`, `sweep` and `overlaps_static` may run on several threads at once between updates.
 - **Lending threads:** give `make_std_kernels` a `task_dispatcher_type` (see jfc-dispatch), and large updates hand their binning, gathering and pair tests to your threads. Without one, every update runs serially.
 
 For results that are the same on every machine, build with `GDK_MATH_STRICT_FP`, which gdk-math applies to everything built on it, this library included.

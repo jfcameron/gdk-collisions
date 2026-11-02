@@ -48,25 +48,42 @@ std::vector<contact> impl_scene::do_contacts_for(const collider &aCollider) cons
     return collect_contacts(m_Events, &aCollider);
 }
 
+impl_scene::query_movers impl_scene::movers_for_query(const bool aStaticOnly) const {
+    query_movers movers;
+
+    if (!aStaticOnly)
+        for (const auto &weak : m_DynamicColliders)
+            if (auto pBody = weak.lock()) {
+                append_row(movers.table, *pBody,
+                    pBody->is_kinematic() ? body_motion::kinematic : body_motion::dynamic, false);
+                movers.owners.push_back(std::move(pBody));
+            }
+
+    return movers;
+}
+
+std::vector<collider_id_type> impl_scene::ignored_by_query(const collider *const pIgnore) const {
+    auto ignore = m_Ids->released();
+
+    if (const auto *const pSkipped = dynamic_cast<const impl_collider *>(pIgnore)) ignore.push_back(pSkipped->id());
+
+    return ignore;
+}
+
+const_collider_ptr_type impl_scene::collider_answering(const body_ref &aBody, const query_movers &aMovers) const {
+    if (aBody.fixed) return m_StaticOwners[aBody.row].lock();
+
+    return aMovers.owners[aBody.row];
+}
+
 std::optional<raycast_hit> impl_scene::do_raycast(const vector3_type &aOrigin, const vector3_type &aDirection,
     const floating_point_type aMaxDistance, const collider *const pIgnore, const bool aStaticOnly,
     const collision_layers_type aLayers) const {
     const auto direction = aDirection.normal();
     if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
 
-    body_table movers;
-    std::vector<impl_collider_ptr_type> owners;
-
-    if (!aStaticOnly)
-        for (const auto &weak : m_DynamicColliders)
-            if (auto pBody = weak.lock()) {
-                append_row(movers, *pBody, pBody->is_kinematic() ? body_motion::kinematic : body_motion::dynamic, false);
-                owners.push_back(std::move(pBody));
-            }
-
-    auto ignore = m_Ids->released();
-
-    if (const auto *const pSkipped = dynamic_cast<const impl_collider *>(pIgnore)) ignore.push_back(pSkipped->id());
+    const auto movers = movers_for_query(aStaticOnly);
+    const auto ignore = ignored_by_query(pIgnore);
 
     ray_query query;
     query.origin = aOrigin;
@@ -76,15 +93,51 @@ std::optional<raycast_hit> impl_scene::do_raycast(const vector3_type &aOrigin, c
     query.ignore = ignore;
     query.statics_only = aStaticOnly;
 
-    const auto answer = m_Kernels->cast_ray(scene_tables{m_Statics, movers, m_Rules}, query);
+    const auto answer = m_Kernels->cast_ray(scene_tables{m_Statics, movers.table, m_Rules}, query);
 
     if (!answer) return std::nullopt;
 
     raycast_hit hit;
-    hit.collider = answer->body.fixed ? m_StaticOwners[answer->body.row].lock() : owners[answer->body.row];
+    hit.collider = collider_answering(answer->body, movers);
     hit.distance = answer->distance;
     hit.point = answer->point;
     hit.normal = answer->normal;
+
+    if (!hit.collider) return std::nullopt;
+
+    return hit;
+}
+
+std::optional<sweep_hit> impl_scene::do_sweep(const capsule &aShape, const vector3_type &aDirection,
+    const floating_point_type aMaxDistance, const collider *const pIgnore, const bool aStaticOnly,
+    const collision_layers_type aLayers) const {
+    const auto direction = aDirection.normal();
+    if (direction.is_effectively_zero() || aMaxDistance <= 0.0f) return std::nullopt;
+    if (aShape.radius <= 0.0f || aShape.half_height < 0.0f) return std::nullopt;
+
+    const auto movers = movers_for_query(aStaticOnly);
+    const auto ignore = ignored_by_query(pIgnore);
+
+    auto shape = aShape;
+    shape.rotation = aShape.rotation.normalized();
+
+    sweep_query query;
+    query.direction = direction;
+    query.max_distance = aMaxDistance;
+    query.layers = aLayers;
+    query.ignore = ignore;
+    query.statics_only = aStaticOnly;
+
+    const auto answer = m_Kernels->cast_shape(scene_tables{m_Statics, movers.table, m_Rules}, shape, query);
+
+    if (!answer) return std::nullopt;
+
+    sweep_hit hit;
+    hit.collider = collider_answering(answer->body, movers);
+    hit.distance = answer->distance;
+    hit.point = answer->point;
+    hit.normal = answer->normal;
+    hit.penetration = answer->penetration;
 
     if (!hit.collider) return std::nullopt;
 
