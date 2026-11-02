@@ -7,8 +7,10 @@
 #include <gdk/collisions/events.h>
 #include <gdk/collisions/response_handler.h>
 #include <gdk/collisions/types.h>
+#include <gdk/collisions/capsule.h>
 #include <gdk/collisions/contact.h>
 #include <gdk/collisions/raycast_hit.h>
+#include <gdk/collisions/sweep_hit.h>
 #include <gdk/collisions/parallelepiped.h>
 #include <gdk/collisions/upright_cylinder.h>
 #include <gdk/collisions/rigid_transform.h>
@@ -55,6 +57,27 @@ namespace gdk::collisions {
             const floating_point_type aMaxDistance,
             const collision_layers_type aLayers = ALL_COLLISION_LAYERS) const {
             return do_raycast(aOrigin, aDirection, aMaxDistance, nullptr, true, aLayers);
+        }
+
+        /// \brief the nearest collider a capsule meets moving from where it stands, never a trigger.
+        /// Moving colliders are met where they stand. A capsule that begins overlapping a collider, or touching it
+        /// and moving into it, meets it at distance 0; one touching it and moving along it or away does not.
+        ///
+        /// \param pIgnore a collider the capsule goes through as if it were not there
+        [[nodiscard]] std::optional<sweep_hit> sweep(const capsule &aShape,
+            const vector3_type &aDirection,
+            const floating_point_type aMaxDistance,
+            const collider *pIgnore = nullptr,
+            const collision_layers_type aLayers = ALL_COLLISION_LAYERS) const {
+            return do_sweep(aShape, aDirection, aMaxDistance, pIgnore, false, aLayers);
+        }
+
+        /// \brief the nearest immovable collider a capsule meets, on any of aLayers
+        [[nodiscard]] std::optional<sweep_hit> sweep_static(const capsule &aShape,
+            const vector3_type &aDirection,
+            const floating_point_type aMaxDistance,
+            const collision_layers_type aLayers = ALL_COLLISION_LAYERS) const {
+            return do_sweep(aShape, aDirection, aMaxDistance, nullptr, true, aLayers);
         }
 
         /// \brief whether any immovable collider reaches into aVolume
@@ -267,6 +290,11 @@ namespace gdk::collisions {
         [[nodiscard]] virtual std::vector<contact> do_contacts_for(const collider &aCollider) const = 0;
 
         [[nodiscard]] virtual std::optional<raycast_hit> do_raycast(const vector3_type &aOrigin,
+            const vector3_type &aDirection,
+            const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly,
+            collision_layers_type aLayers) const = 0;
+
+        [[nodiscard]] virtual std::optional<sweep_hit> do_sweep(const capsule &aShape,
             const vector3_type &aDirection,
             const floating_point_type aMaxDistance, const collider *pIgnore, bool aStaticOnly,
             collision_layers_type aLayers) const = 0;

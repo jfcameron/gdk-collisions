@@ -36,6 +36,10 @@ namespace gdk::collisions {
             const vector3_type &aDirection, const floating_point_type aMaxDistance, const collider *pIgnore,
             bool aStaticOnly, collision_layers_type aLayers) const override;
 
+        [[nodiscard]] virtual std::optional<sweep_hit> do_sweep(const capsule &aShape,
+            const vector3_type &aDirection, const floating_point_type aMaxDistance, const collider *pIgnore,
+            bool aStaticOnly, collision_layers_type aLayers) const override;
+
         [[nodiscard]] virtual bool do_overlaps_static(const upright_cylinder &aVolume) const override;
         [[nodiscard]] virtual bool do_overlaps_static(const parallelepiped &aVolume) const override;
 
@@ -145,6 +149,18 @@ namespace gdk::collisions {
         void refresh_dirty();
 
         [[nodiscard]] impl_collider_ptr_type owner_of(const body_ref &aBody) const;
+
+        struct query_movers final {
+            body_table table;
+            std::vector<impl_collider_ptr_type> owners;
+        };
+
+        [[nodiscard]] query_movers movers_for_query(const bool aStaticOnly) const;
+
+        [[nodiscard]] std::vector<collider_id_type> ignored_by_query(const collider *pIgnore) const;
+
+        [[nodiscard]] const_collider_ptr_type collider_answering(const body_ref &aBody,
+            const query_movers &aMovers) const;
 
         void update_step(const delta_time_type aDeltaTime);
 

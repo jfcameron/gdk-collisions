@@ -169,6 +169,28 @@ namespace gdk::collisions {
         /// \brief facing back toward the ray's origin
         vector3_type normal = vector3_type::zero;
     };
+
+    /// \brief where a shape goes, and what it may meet on the way
+    struct sweep_query final {
+        /// \brief unit length
+        vector3_type direction = vector3_type::zero;
+        floating_point_type max_distance = 0;
+        /// \brief a collider is met only when it is on one of these
+        collision_layers_type layers = ALL_COLLISION_LAYERS;
+        /// \brief colliders the shape passes through
+        std::span<const collider_id_type> ignore;
+        bool statics_only = false;
+    };
+
+    struct sweep_answer final {
+        body_ref body;
+        floating_point_type distance = 0;
+        vector3_type point = vector3_type::zero;
+        /// \brief facing back toward the shape
+        vector3_type normal = vector3_type::zero;
+        /// \brief how deep the shape reached into the body where it began; distance is 0 when this is not
+        floating_point_type penetration = 0;
+    };
 }
 
 #endif

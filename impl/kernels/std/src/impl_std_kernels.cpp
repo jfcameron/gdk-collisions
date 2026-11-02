@@ -246,6 +246,54 @@ namespace {
             return nearest;
         }
 
+        [[nodiscard]] virtual std::optional<sweep_answer> cast_shape(const scene_tables &aTables,
+            const capsule &aShape, const sweep_query &aQuery) const override {
+            const auto tuning = tuning_of(m_Policy, aTables.rules);
+
+            const collider_part part{capsule_shape{aShape.radius, aShape.half_height}};
+            const shape_kinematics moving{aShape.centre, aQuery.direction, aShape.rotation};
+
+            const auto extents = shape_extents(part.shape, aShape.rotation);
+            const auto travel = aQuery.direction * aQuery.max_distance;
+            const bounds reach{vector3_type::min(aShape.centre - extents, aShape.centre - extents + travel),
+                vector3_type::max(aShape.centre + extents, aShape.centre + extents + travel)};
+
+            std::optional<sweep_answer> nearest;
+
+            thread_local std::vector<collider_part> parts;
+            thread_local impl_row_set seen;
+
+            const auto consider = [&](const body_table &aTable, const std::uint32_t aRow, const bool aFixed) {
+                if (!aTable.live[aRow] || aTable.trigger[aRow]) return;
+                if ((aTable.on[aRow] & aQuery.layers) == 0) return;
+                if (std::find(aQuery.ignore.begin(), aQuery.ignore.end(), aTable.id[aRow]) != aQuery.ignore.end()) return;
+
+                decode_parts(aTable, aRow, parts);
+
+                const auto hit = narrow_phase_overlap_parts(std::span(&part, 1), moving, parts,
+                    kinematics_of(aTable, aRow, false), nearest ? nearest->distance : aQuery.max_distance, tuning);
+
+                if (!hit || (nearest && hit->entry_time >= nearest->distance)) return;
+
+                nearest = sweep_answer{{aRow, aFixed}, hit->entry_time, hit->contact_point, hit->contact_normal,
+                    hit->penetration};
+            };
+
+            seen.clear();
+
+            m_Statics.visit_overlapping(reach, seen, [&](const std::uint32_t aRow) {
+                consider(aTables.statics, aRow, true);
+
+                return false;
+            });
+
+            if (!aQuery.statics_only)
+                for (std::uint32_t row = 0; row < aTables.movers.size(); ++row)
+                    if (bounds_overlap(aTables.movers.extent[row], reach)) consider(aTables.movers, row, false);
+
+            return nearest;
+        }
+
         [[nodiscard]] virtual bool meets_statics(const scene_tables &aTables, const upright_cylinder &aVolume,
             std::span<const collider_id_type> aIgnore) const override {
             if (aVolume.radius <= 0 || aVolume.height <= 0) return false;

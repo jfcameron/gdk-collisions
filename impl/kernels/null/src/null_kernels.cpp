@@ -22,6 +22,11 @@ namespace {
             return std::nullopt;
         }
 
+        [[nodiscard]] virtual std::optional<sweep_answer> cast_shape(const scene_tables &, const capsule &,
+            const sweep_query &) const override {
+            return std::nullopt;
+        }
+
         [[nodiscard]] virtual bool meets_statics(const scene_tables &, const upright_cylinder &,
             std::span<const collider_id_type>) const override {
             return false;

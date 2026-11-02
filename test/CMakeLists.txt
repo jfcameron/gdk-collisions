@@ -20,6 +20,7 @@ jfc_add_tests(
         "${CMAKE_CURRENT_LIST_DIR}/scene_rotation_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/scene_static_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/scene_surface_test.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/scene_sweep_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/scene_trigger_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/std_conformance.cpp"
 

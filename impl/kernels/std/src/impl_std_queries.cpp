@@ -98,6 +98,7 @@ namespace {
         return ray_hit{near, normal};
     }
 
+    // from Real-Time Collision Detection by Christer Ericson, published by Morgan Kaufmann Publishers, © 2005 Elsevier Inc
     [[nodiscard]] std::optional<ray_hit> ray_sphere(const vector3_type &aOrigin, const vector3_type &aDirection,
         const floating_point_type aMax, const vector3_type &aCentre, const floating_point_type aRadius) {
         if (aRadius <= 0) return std::nullopt;

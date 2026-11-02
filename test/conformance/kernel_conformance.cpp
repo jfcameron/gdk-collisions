@@ -274,6 +274,93 @@ TEST_CASE("conformance, cast_ray strikes the nearest collider, never a trigger",
     CHECK_FALSE(w.kernels->cast_ray(w.tables(), query));
 }
 
+TEST_CASE("conformance, cast_shape meets the nearest collider on the way, never a trigger", "[conformance]") {
+    INFO("implementation " << implementation());
+
+    world w;
+    add(w.statics, {.id = 1, .position = {3, 0, 0}, .trigger = true, .motion = body_motion::fixed});
+    const auto wall = add(w.statics, {.id = 2, .position = {5, 0, 0}, .motion = body_motion::fixed});
+    const auto runner = add(w.movers, {.id = 3, .position = {8, 0, 0}, .velocity = {-100, 0, 0}});
+    w.ready();
+
+    const capsule shape{.radius = 0.25f, .half_height = 0.5f};
+
+    sweep_query query;
+    query.direction = {1, 0, 0};
+    query.max_distance = 100;
+
+    const auto hit = w.kernels->cast_shape(w.tables(), shape, query);
+
+    if (!finds_contacts()) {
+        CHECK_FALSE(hit);
+        return;
+    }
+
+    REQUIRE(hit);
+    CHECK(hit->body == body_ref{wall, true});
+    CHECK(hit->distance == Approx(4.25f).margin(1e-3f));
+    CHECK(hit->normal.x == Approx(-1).margin(1e-3f));
+    CHECK(hit->penetration == Approx(0).margin(1e-3f));
+
+    const collider_id_type skipping[1] = {2};
+    query.ignore = skipping;
+
+    const auto past = w.kernels->cast_shape(w.tables(), shape, query);
+    REQUIRE(past);
+    CHECK(past->body == body_ref{runner, false});
+    CHECK(past->distance == Approx(7.25f).margin(1e-3f));
+
+    query.statics_only = true;
+    CHECK_FALSE(w.kernels->cast_shape(w.tables(), shape, query));
+
+    query.statics_only = false;
+    query.ignore = {};
+    query.layers = 2;
+    CHECK_FALSE(w.kernels->cast_shape(w.tables(), shape, query));
+}
+
+TEST_CASE("conformance, cast_shape meets what it begins in at once, and passes what it only touches",
+    "[conformance]") {
+    INFO("implementation " << implementation());
+
+    world w;
+    const auto ball = add(w.statics, {.id = 1, .motion = body_motion::fixed});
+    w.ready();
+
+    const auto swept = [&](const vector3_type &aCentre, const vector3_type &aDirection) {
+        sweep_query query;
+        query.direction = aDirection;
+        query.max_distance = 10;
+
+        return w.kernels->cast_shape(w.tables(), capsule{aCentre, 0.25f, 0.5f}, query);
+    };
+
+    const vector3_type resting{0, 1.25f, 0};
+
+    CHECK_FALSE(swept(resting, {0, 1, 0}));
+    CHECK_FALSE(swept(resting, {1, 0, 0}));
+
+    const auto sunk = swept({0, 0.9f, 0}, {0, 1, 0});
+
+    if (!finds_contacts()) {
+        CHECK_FALSE(swept(resting, {0, -1, 0}));
+        CHECK_FALSE(sunk);
+        return;
+    }
+
+    const auto pressed = swept(resting, {0, -1, 0});
+    REQUIRE(pressed);
+    CHECK(pressed->body == body_ref{ball, true});
+    CHECK(pressed->distance == Approx(0).margin(1e-4f));
+    CHECK(pressed->normal.y == Approx(1).margin(1e-3f));
+
+    REQUIRE(sunk);
+    CHECK(sunk->body == body_ref{ball, true});
+    CHECK(sunk->distance == Approx(0).margin(1e-4f));
+    CHECK(sunk->penetration == Approx(0.35f).margin(1e-3f));
+    CHECK(sunk->normal.y == Approx(1).margin(1e-3f));
+}
+
 TEST_CASE("conformance, meets_statics answers for upright cylinders and parallelepipeds", "[conformance]") {
     INFO("implementation " << implementation());
 

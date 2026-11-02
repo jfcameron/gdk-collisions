@@ -3,6 +3,7 @@
 #ifndef GDK_COLLISIONS_KERNELS_SCENE_KERNELS_H
 #define GDK_COLLISIONS_KERNELS_SCENE_KERNELS_H
 
+#include <gdk/collisions/capsule.h>
 #include <gdk/collisions/kernels/tables.h>
 #include <gdk/collisions/parallelepiped.h>
 #include <gdk/collisions/upright_cylinder.h>
@@ -17,8 +18,8 @@ namespace gdk::collisions {
     /// A scene owns the tables and its kernels own whatever structures they build over them. A kernels object
     /// serves one scene. Write one to put that work somewhere else, a GPU for instance, and hold a std kernels
     /// object to hand on whatever it does not do itself.
-    /// \note one call at a time, except that cast_ray and meets_statics may run on several threads at once
-    /// between the others; an implementation may use threads of its own within a call
+    /// \note one call at a time, except that cast_ray, cast_shape and meets_statics may run on several threads at
+    /// once between the others; an implementation may use threads of its own within a call
     class scene_kernels {
     public:
         virtual ~scene_kernels() = default;
@@ -45,6 +46,12 @@ namespace gdk::collisions {
         /// \brief the nearest collider, never a trigger, along a ray
         [[nodiscard]] virtual std::optional<ray_answer> cast_ray(const scene_tables &aTables,
             const ray_query &aQuery) const = 0;
+
+        /// \brief the nearest collider, never a trigger, that a shape meets moving from where it stands.
+        /// Movers are met where they stand. A shape that begins overlapping a collider, or touching it and moving
+        /// into it, meets it at distance 0; one that begins touching it and moves along it or away does not
+        [[nodiscard]] virtual std::optional<sweep_answer> cast_shape(const scene_tables &aTables,
+            const capsule &aShape, const sweep_query &aQuery) const = 0;
 
         /// \brief whether any static collider, never a trigger nor one of aIgnore, reaches into the volume
         [[nodiscard]] virtual bool meets_statics(const scene_tables &aTables, const upright_cylinder &aVolume,
