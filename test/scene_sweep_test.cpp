@@ -27,7 +27,7 @@ TEST_CASE("gdk::scene sweep finds the nearest collider a capsule meets", "[gdk::
         REQUIRE(hit->collider == const_collider_ptr_type(pWall));
         REQUIRE(hit->distance == Approx(9.0f).margin(1e-3f));
         REQUIRE(hit->point.x == Approx(-0.5f).margin(1e-3f));
-        REQUIRE(hit->penetration == Approx(0.0f).margin(1e-4f));
+        REQUIRE(hit->penetration == 0);
         require_vector_near(hit->normal, {-1, 0, 0}, 1e-3f);
     }
 
@@ -156,6 +156,16 @@ TEST_CASE("gdk::scene sweep carries a capsule over a floor", "[gdk::collision]")
         REQUIRE(hit->distance == Approx(4.0f).margin(1e-3f));
         require_vector_near(hit->normal, {0, 1, 0}, 1e-3f);
         require_vector_near(hit->point, {2, 0, 1}, 1e-3f);
+        REQUIRE(hit->penetration == 0);
+    }
+
+    SECTION("falling from a little above it, it lands without having reached in")
+    {
+        const auto hit = f.scene->sweep(capsule{{0.3f, 0.9717f, -0.2f}, 0.4f, 0.5f}, {0, -1, 0}, 0.128f);
+
+        REQUIRE(hit.has_value());
+        REQUIRE(hit->distance == Approx(0.0717f).margin(1e-4f));
+        REQUIRE(hit->penetration == 0);
     }
 
     SECTION("standing on it, it walks over its seam and lifts off freely, and meets it pressing down")

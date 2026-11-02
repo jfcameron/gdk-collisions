@@ -276,7 +276,7 @@ namespace {
                 if (!hit || (nearest && hit->entry_time >= nearest->distance)) return;
 
                 nearest = sweep_answer{{aRow, aFixed}, hit->entry_time, hit->contact_point, hit->contact_normal,
-                    hit->penetration};
+                    hit->entry_time > 0 ? floating_point_type{0} : hit->penetration};
             };
 
             seen.clear();

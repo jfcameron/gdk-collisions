@@ -300,7 +300,7 @@ TEST_CASE("conformance, cast_shape meets the nearest collider on the way, never 
     CHECK(hit->body == body_ref{wall, true});
     CHECK(hit->distance == Approx(4.25f).margin(1e-3f));
     CHECK(hit->normal.x == Approx(-1).margin(1e-3f));
-    CHECK(hit->penetration == Approx(0).margin(1e-3f));
+    CHECK(hit->penetration == 0);
 
     const collider_id_type skipping[1] = {2};
     query.ignore = skipping;
@@ -359,6 +359,37 @@ TEST_CASE("conformance, cast_shape meets what it begins in at once, and passes w
     CHECK(sunk->distance == Approx(0).margin(1e-4f));
     CHECK(sunk->penetration == Approx(0.35f).margin(1e-3f));
     CHECK(sunk->normal.y == Approx(1).margin(1e-3f));
+}
+
+TEST_CASE("conformance, cast_shape tells no penetration for what it meets on the way", "[conformance]") {
+    INFO("implementation " << implementation());
+    if (skipped()) return;
+
+    world w;
+    add(w.statics, {.id = 1, .motion = body_motion::fixed});
+    add(w.statics, {.id = 2, .position = {4, 0, 0}, .kind = shape_kind::aabb, .size = {1, 0.5f, 1},
+        .motion = body_motion::fixed});
+    w.ready();
+
+    sweep_query query;
+    query.direction = {0, -1, 0};
+    query.max_distance = 1;
+
+    std::size_t told = 0;
+
+    for (int step = 1; step <= 64; ++step) {
+        const auto above = 0.003f * static_cast<floating_point_type>(step);
+
+        for (const auto x : {0.1f, 4.1f}) {
+            const auto hit = w.kernels->cast_shape(w.tables(), capsule{{x, 1.4f + above, 0.1f}, 0.4f, 0.5f}, query);
+
+            REQUIRE(hit);
+            REQUIRE(hit->distance > 0);
+            if (hit->penetration != 0) ++told;
+        }
+    }
+
+    CHECK(told == 0);
 }
 
 TEST_CASE("conformance, meets_statics answers for upright cylinders and parallelepipeds", "[conformance]") {
