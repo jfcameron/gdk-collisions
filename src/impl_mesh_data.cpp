@@ -5,10 +5,8 @@
 #include <gdk/collisions/impl_mesh_data.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <limits>
-#include <map>
 #include <numeric>
 #include <utility>
 #include <span>
@@ -73,47 +71,74 @@ void impl_mesh_data::flag_internal_edges(const floating_point_type aCoplanarTole
     const auto count = static_cast<std::uint32_t>(triangle_count());
     m_InternalEdges.assign(count, 0);
 
-    std::map<std::array<floating_point_type, 3>, std::uint32_t> welded;
+    struct placed final {
+        floating_point_type x;
+        floating_point_type y;
+        floating_point_type z;
+        std::uint32_t vertex;
+    };
+
+    const auto before = [](const placed &aLeft, const placed &aRight) {
+        if (aLeft.x != aRight.x) return aLeft.x < aRight.x;
+        if (aLeft.y != aRight.y) return aLeft.y < aRight.y;
+        return aLeft.z < aRight.z;
+    };
+
+    std::vector<placed> byPosition;
+    byPosition.reserve(m_Vertices.size());
+    for (std::uint32_t v = 0; v < m_Vertices.size(); ++v)
+        byPosition.push_back({m_Vertices[v].x, m_Vertices[v].y, m_Vertices[v].z, v});
+
+    std::sort(byPosition.begin(), byPosition.end(), before);
+
     std::vector<std::uint32_t> canonical(m_Vertices.size());
+    for (std::size_t i = 0; i < byPosition.size(); ++i)
+        canonical[byPosition[i].vertex] = i > 0 && !before(byPosition[i - 1], byPosition[i])
+            ? canonical[byPosition[i - 1].vertex] : byPosition[i].vertex;
 
-    for (std::size_t i = 0; i < m_Vertices.size(); ++i) {
-        const std::array<floating_point_type, 3> key{
-            m_Vertices[i].x, m_Vertices[i].y, m_Vertices[i].z};
-
-        canonical[i] = welded.emplace(key, static_cast<std::uint32_t>(welded.size())).first->second;
-    }
-
-    std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::uint32_t>> edges;
-
-    const auto edge_key = [&](const std::uint32_t aTriangle, const int aEdge) {
-        const auto base = static_cast<std::size_t>(aTriangle) * 3;
-        const auto first = canonical[m_Indices[base + aEdge]];
-        const auto second = canonical[m_Indices[base + (aEdge + 1) % 3]];
-        return std::make_pair(std::min(first, second), std::max(first, second));
+    struct side final {
+        std::uint64_t key;
+        std::uint32_t triangle;
+        std::uint32_t edge;
     };
 
-    for (std::uint32_t t = 0; t < count; ++t)
-        for (int e = 0; e < 3; ++e) edges[edge_key(t, e)].push_back(t);
-
-    const auto normal_of = [this](const std::uint32_t aTriangle) {
-        vector3_type a, b, c;
-        triangle(aTriangle, a, b, c);
-        return (b - a).cross_product(c - a).normal();
-    };
+    std::vector<side> sides;
+    sides.reserve(static_cast<std::size_t>(count) * 3);
 
     for (std::uint32_t t = 0; t < count; ++t) {
-        const auto normal = normal_of(t);
+        const auto base = static_cast<std::size_t>(t) * 3;
 
-        for (int e = 0; e < 3; ++e) {
-            const auto &sharing = edges[edge_key(t, e)];
-
-            if (sharing.size() != 2) continue;
-
-            const auto neighbour = sharing[0] == t ? sharing[1] : sharing[0];
-
-            if (normal.dot_product(normal_of(neighbour)) >= 1.0f - aCoplanarTolerance)
-                m_InternalEdges[t] |= static_cast<std::uint8_t>(1u << e);
+        for (std::uint32_t e = 0; e < 3; ++e) {
+            const auto first = canonical[m_Indices[base + e]];
+            const auto second = canonical[m_Indices[base + (e + 1) % 3]];
+            sides.push_back({(std::uint64_t{std::min(first, second)} << 32) | std::max(first, second), t, e});
         }
+    }
+
+    std::sort(sides.begin(), sides.end(), [](const side &aLeft, const side &aRight) { return aLeft.key < aRight.key; });
+
+    std::vector<vector3_type> normals(count);
+    for (std::uint32_t t = 0; t < count; ++t) {
+        vector3_type a, b, c;
+        triangle(t, a, b, c);
+        normals[t] = (b - a).cross_product(c - a).normal();
+    }
+
+    for (std::size_t first = 0; first < sides.size();) {
+        auto last = first + 1;
+        while (last < sides.size() && sides[last].key == sides[first].key) ++last;
+
+        if (last - first == 2) {
+            const auto &one = sides[first];
+            const auto &other = sides[first + 1];
+
+            if (normals[one.triangle].dot_product(normals[other.triangle]) >= 1.0f - aCoplanarTolerance) {
+                m_InternalEdges[one.triangle] |= static_cast<std::uint8_t>(1u << one.edge);
+                m_InternalEdges[other.triangle] |= static_cast<std::uint8_t>(1u << other.edge);
+            }
+        }
+
+        first = last;
     }
 }
 

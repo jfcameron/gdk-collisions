@@ -709,6 +709,55 @@ TEST_CASE("gdk::overlap a flat seam between triangles is flagged, a real edge is
         REQUIRE(pSplit->internal_edges(0) == 0b100);
         REQUIRE(pSplit->internal_edges(1) == 0b001);
     }
+
+    SECTION("an edge three triangles share is not flagged, however flat")
+    {
+        const auto pFan = std::dynamic_pointer_cast<const impl_mesh_data>(make_mesh_data(
+            {{0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {-1, 0, 0}, {2, 0, 0}},
+            {0, 1, 2, 1, 0, 3, 0, 1, 4}));
+
+        REQUIRE(pFan->internal_edges(0) == 0);
+        REQUIRE(pFan->internal_edges(1) == 0);
+        REQUIRE(pFan->internal_edges(2) == 0);
+    }
+
+    SECTION("a mesh flags alike whether its triangles share vertices or repeat them")
+    {
+        constexpr std::uint32_t side = 9;
+        std::vector<vector3_type> shared;
+        for (std::uint32_t z = 0; z < side; ++z)
+            for (std::uint32_t x = 0; x < side; ++x)
+                shared.push_back({static_cast<floating_point_type>(x),
+                    x < 4 ? 0.0f : 0.3f * std::sin(static_cast<floating_point_type>(x * z)),
+                    static_cast<floating_point_type>(z)});
+
+        std::vector<std::uint32_t> indices;
+        for (std::uint32_t z = 0; z + 1 < side; ++z)
+            for (std::uint32_t x = 0; x + 1 < side; ++x) {
+                const auto at = z * side + x;
+                for (const auto corner : {at, at + side, at + 1, at + 1, at + side, at + side + 1})
+                    indices.push_back(corner);
+            }
+
+        std::vector<vector3_type> repeated;
+        std::vector<std::uint32_t> own;
+        for (const auto index : indices) {
+            own.push_back(static_cast<std::uint32_t>(repeated.size()));
+            repeated.push_back(shared[index]);
+        }
+
+        const auto pShared = std::dynamic_pointer_cast<const impl_mesh_data>(make_mesh_data(shared, indices));
+        const auto pRepeated = std::dynamic_pointer_cast<const impl_mesh_data>(make_mesh_data(repeated, own));
+
+        std::size_t flat = 0, bent = 0;
+        for (std::uint32_t t = 0; t < pShared->triangle_count(); ++t) {
+            REQUIRE(pShared->internal_edges(t) == pRepeated->internal_edges(t));
+            for (int e = 0; e < 3; ++e) ++((pShared->internal_edges(t) & (1u << e)) ? flat : bent);
+        }
+
+        REQUIRE(flat > 0);
+        REQUIRE(bent > 0);
+    }
 }
 
 TEST_CASE("gdk::overlap a seam contact reports the surface's normal", "[gdk::collision]")
