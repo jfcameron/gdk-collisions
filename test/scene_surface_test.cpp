@@ -13,6 +13,158 @@
 using namespace gdk::collisions;
 using namespace gdk::collisions::scene_testing;
 
+TEST_CASE("gdk::scene does not brake a box above a thin steep triangle", "[gdk::collision][slope_seam]")
+{
+    const auto degrees = GENERATE(60.f, 75.f);
+    const auto width = GENERATE(.01f, .001f, .0001f, .00001f);
+    const auto angle = degrees * 3.14159265f / 180;
+    const vector3_type normal{-std::sin(angle), std::cos(angle), 0};
+    fixture f;
+    const auto pSurface = f.scene->make_static_mesh_collider(
+        matrix4x4_type::identity,
+        make_mesh_data({{0, 0, 0}, {width, width * std::tan(angle), 0}, {0, 0, 5}}, {0, 1, 2}));
+    const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+    const auto position = vector3_type{0, 0, 8} + normal * .65f;
+    const vector3_type velocity{0, 0, -40};
+    pBody->set_half_extents({.82f, .4f, 1.7f});
+    pBody->set_position(position);
+    pBody->set_rotation(quaternion_type::from_euler({0, 0, angle - 15 * 3.14159265f / 180}));
+    pBody->set_velocity(velocity);
+    f.update(.05f);
+    CAPTURE(degrees, width, pBody->resolved_velocity().z, pBody->transform().translation().z);
+    REQUIRE(f.scene->contacts_for(*pBody).empty());
+    require_vector_near(pBody->resolved_velocity(), velocity, .001f);
+    require_vector_near(pBody->transform().translation(), position + velocity * .05f, .001f);
+}
+
+TEST_CASE("gdk::scene preserves travel across thin strips of a steep mesh", "[gdk::collision][slope_seam]")
+{
+    const auto degrees = GENERATE(60.f, 75.f);
+    const auto width = GENERATE(.01f, .0001f, .00001f, .000001f);
+    const auto angle = degrees * 3.14159265f / 180;
+    const auto rise = std::tan(angle);
+    const auto normal = vector3_type{-rise, 1, 0}.normal();
+    const auto rotation = quaternion_type::from_euler({0, 0, angle - 15 * 3.14159265f / 180});
+    const vector3_type extents{.82f, .4f, 1.7f};
+    const auto radius = std::abs(normal.dot_product(rotation * vector3_type{1, 0, 0})) * extents.x +
+                        std::abs(normal.dot_product(rotation * vector3_type{0, 1, 0})) * extents.y;
+    std::vector<vector3_type> vertices;
+    std::vector<std::uint32_t> indices;
+    for (const auto limits : {std::pair{-10.f, 0.f}, std::pair{0.f, width}, std::pair{width, 10.f}}) {
+        const auto base = static_cast<std::uint32_t>(vertices.size());
+        vertices.insert(vertices.end(), {{-5, -5 * rise, limits.first},
+                                         {5, 5 * rise, limits.first},
+                                         {5, 5 * rise, limits.second},
+                                         {-5, -5 * rise, limits.second}});
+        indices.insert(indices.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
+    }
+    fixture f;
+    const auto pSurface = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
+                                                             make_mesh_data(std::move(vertices), std::move(indices)));
+    const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+    const auto position = vector3_type{0, 0, 3} + normal * (radius + .0000004f);
+    const vector3_type velocity{0, 0, -40};
+    pBody->set_half_extents(extents);
+    pBody->set_position(position);
+    pBody->set_rotation(rotation);
+    pBody->set_velocity(velocity);
+    f.update(.05f);
+    CAPTURE(degrees, width, pBody->resolved_velocity().z, pBody->transform().translation().z);
+    REQUIRE(pBody->resolved_velocity().z == Approx(velocity.z).margin(.001));
+    REQUIRE(pBody->transform().translation().z == Approx(position.z + velocity.z * .05f).margin(.001));
+}
+
+TEST_CASE("gdk::heightfield keeps thin coplanar edges internal", "[gdk::collision][slope_seam]")
+{
+    const auto width = GENERATE(.01f, .0001f, .00001f, .000001f);
+    const auto pData = make_heightfield_data(2, 3, {-10, 10, -10, 10, -10, 10}, {10, width});
+    const auto pImplementation = std::dynamic_pointer_cast<const impl_heightfield_data>(pData);
+    REQUIRE(pImplementation);
+    CAPTURE(width);
+    REQUIRE((pImplementation->internal_edges(0) & 4) != 0);
+    REQUIRE((pImplementation->internal_edges(1) & 3) == 3);
+}
+
+TEST_CASE("gdk::scene still blocks an exposed thin mesh rim", "[gdk::collision][slope_seam]")
+{
+    const auto width = GENERATE(.01f, .0001f, .00001f, .000001f);
+    const auto angle = 75 * 3.14159265f / 180;
+    const auto rise = std::tan(angle);
+    const auto normal = vector3_type{-rise, 1, 0}.normal();
+    const auto rotation = quaternion_type::from_euler({0, 0, angle - 15 * 3.14159265f / 180});
+    const vector3_type extents{.82f, .4f, 1.7f};
+    const auto radius = std::abs(normal.dot_product(rotation * vector3_type{1, 0, 0})) * extents.x +
+                        std::abs(normal.dot_product(rotation * vector3_type{0, 1, 0})) * extents.y;
+    fixture f;
+    const auto pSurface = f.scene->make_static_mesh_collider(
+        matrix4x4_type::identity,
+        make_mesh_data({{-5, -5 * rise, 0}, {5, 5 * rise, 0}, {5, 5 * rise, width}, {-5, -5 * rise, width}},
+                       {0, 2, 1, 0, 3, 2}));
+    const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+    pBody->set_half_extents(extents);
+    pBody->set_position(vector3_type{0, 0, 3} + normal * (radius - .1f));
+    pBody->set_rotation(rotation);
+    pBody->set_velocity({0, 0, -40});
+    f.update(.05f);
+    CAPTURE(width);
+    REQUIRE_FALSE(f.scene->contacts_for(*pBody).empty());
+    REQUIRE(std::abs(pBody->resolved_velocity().z) < .001f);
+}
+
+TEST_CASE("gdk::scene does not collide with the extended plane outside a finite triangle", "[gdk::collision][swept_sat]")
+{
+    fixture f;
+    const auto pSurface = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
+        make_mesh_data({{0, 0, 0}, {5, 0.360625267f, 0}, {5, -0.827378498f, 5}}, {0, 1, 2}));
+    const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+    const vector3_type position{-1.386f, 0.597866341f, 0.329f};
+    const vector3_type velocity{20.806f, 1.132f, -13.594f};
+    pBody->set_half_extents({0.82f, 0.40f, 1.70f});
+    pBody->set_position(position);
+    pBody->set_rotation(quaternion_type::from_euler({0.077f, -1.012f, 0.048f}));
+    pBody->set_velocity(velocity);
+    constexpr float STEP = 1.f / 120;
+    f.update(STEP);
+    REQUIRE(f.scene->contacts_for(*pBody).empty());
+    REQUIRE((pBody->resolved_velocity() - velocity).length() < 0.001f);
+    REQUIRE((pBody->transform().translation() - (position + velocity * STEP)).length() < 0.001f);
+}
+
+TEST_CASE("gdk::scene rejects triangle sweeps whose axis overlap times are disjoint", "[gdk::collision][swept_sat]")
+{
+    for (const float scale : {1.f, 10.f, 100.f}) {
+        fixture f({.CONSERVATIVE_ADVANCEMENT_MAX_STEPS = 1});
+        const auto pSurface = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
+            make_mesh_data({{0, 0, 0}, {5, 0, 0}, {0, 0, 5}}, {0, 1, 2}));
+        const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+        const vector3_type position{-2, 1.1f, -2};
+        const auto velocity = vector3_type{4, -4, 4} * scale;
+        pBody->set_half_extents({0.1f, 0.1f, 0.1f});
+        pBody->set_position(position);
+        pBody->set_velocity(velocity);
+        // It passes below the plane before its X/Z footprint reaches the triangle.
+        f.update(1 / scale);
+        REQUIRE(f.scene->contacts_for(*pBody).empty());
+        REQUIRE((pBody->resolved_velocity() - velocity).length() < 0.001f);
+        REQUIRE((pBody->transform().translation() - vector3_type{2, -2.9f, 2}).length() < 0.001f);
+    }
+}
+
+TEST_CASE("gdk::scene still catches a fast box when all triangle sweep intervals overlap", "[gdk::collision][swept_sat]")
+{
+    fixture f({.CONSERVATIVE_ADVANCEMENT_MAX_STEPS = 1});
+    const auto pSurface = f.scene->make_static_mesh_collider(matrix4x4_type::identity,
+        make_mesh_data({{-10, 0, -10}, {10, 0, -10}, {0, 0, 10}}, {0, 1, 2}));
+    const auto pBody = f.scene->make_obb_collider(response_handlers::slide_projecting());
+    pBody->set_half_extents({0.5f, 0.5f, 0.5f});
+    pBody->set_position({-2, 5, 0});
+    pBody->set_velocity({20, -100, 0});
+    f.update(0.1f);
+    REQUIRE_FALSE(f.scene->contacts_for(*pBody).empty());
+    REQUIRE(pBody->transform().translation().y == Approx(0.5f).margin(0.001f));
+    REQUIRE(std::abs(pBody->resolved_velocity().y) < 0.001f);
+}
+
 TEST_CASE("gdk::scene rests a body on a static mesh floor", "[gdk::collision]")
 {
     fixture f;

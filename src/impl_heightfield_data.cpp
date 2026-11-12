@@ -3,6 +3,7 @@
 #include <gdk/collisions/exception.h>
 #include <gdk/collisions/heightfield_data.h>
 #include <gdk/collisions/impl_heightfield_data.h>
+#include <gdk/collisions/impl_triangle_normal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -109,7 +110,7 @@ void impl_heightfield_data::flag_internal_edges(const floating_point_type aCopla
     const auto normal_of = [this](const std::uint32_t aTriangle) {
         vector3_type a, b, c;
         triangle(aTriangle, a, b, c);
-        return (b - a).cross_product(c - a).normal();
+        return impl_triangle_normal(a, b, c);
     };
 
     const auto cellsPerRow = m_Columns - 1;

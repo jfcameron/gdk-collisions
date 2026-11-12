@@ -13,6 +13,27 @@
 using namespace gdk::collisions;
 using namespace gdk::collisions::scene_testing;
 
+TEST_CASE("gdk::scene vertical rays retain precision on thin triangles", "[gdk::collision][raycast]")
+{
+    fixture f;
+    const std::vector<vector3_type> vertices{
+        {-1.0576598644f, -0.6790586114f, 2.089599371f},
+        {-1.2110968828f, -0.7683925033f, 1.8742907047f},
+        {-1.1940484047f, -0.7584664822f, 1.8982139826f}};
+    const auto pMesh = f.scene->make_static_mesh_collider(matrix4x4_type(), make_mesh_data(vertices, {0, 1, 2}));
+    const auto centre = (vertices[0] + vertices[1] + vertices[2]) / 3.0f;
+    for (const auto height : {2.0f, 100.0f})
+        for (const auto side : {-1.0f, 1.0f}) {
+            const auto hit = f.scene->raycast_static(centre + vector3_type{0, height * side, 0},
+                {0, -side, 0}, height * 2);
+            REQUIRE(hit);
+            REQUIRE(hit->collider == const_collider_ptr_type(pMesh));
+            REQUIRE(hit->point.y == Approx(centre.y).margin(0.0001f));
+            REQUIRE(hit->normal.y * side > 0);
+            REQUIRE(hit->normal.length() == Approx(1.0f).margin(0.00001f));
+        }
+}
+
 TEST_CASE("gdk::scene raycast finds the nearest collider", "[gdk::collision]")
 {
     fixture f;

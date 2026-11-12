@@ -3,6 +3,7 @@
 #include <gdk/collisions/exception.h>
 #include <gdk/collisions/mesh_data.h>
 #include <gdk/collisions/impl_mesh_data.h>
+#include <gdk/collisions/impl_triangle_normal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -121,7 +122,7 @@ void impl_mesh_data::flag_internal_edges(const floating_point_type aCoplanarTole
     for (std::uint32_t t = 0; t < count; ++t) {
         vector3_type a, b, c;
         triangle(t, a, b, c);
-        normals[t] = (b - a).cross_product(c - a).normal();
+        normals[t] = impl_triangle_normal(a, b, c);
     }
 
     for (std::size_t first = 0; first < sides.size();) {

@@ -37,53 +37,56 @@ namespace {
         std::optional<vector3_type> normal;
     };
 
-    [[nodiscard]] internal_edge_verdict corrected_internal_edge_normal(
-        const std::uint8_t aInternalEdges, const triangle_points &aTriangle,
-        const vector3_type &aContactPoint, const vector3_type &aContactNormal,
-        const impl_std_tuning &aPolicy) {
-        if (!aInternalEdges) return {};
+    [[nodiscard]] internal_edge_verdict corrected_internal_edge_normal(const std::uint8_t aInternalEdges,
+                                                                       const triangle_points &aTriangle,
+                                                                       const vector3_type &aContactPoint,
+                                                                       const vector3_type &aContactNormal,
+                                                                       const impl_std_tuning &aPolicy) {
+        if (!aInternalEdges)
+            return {};
 
-        const auto ab = aTriangle.b - aTriangle.a;
-        const auto ac = aTriangle.c - aTriangle.a;
-
-        auto faceNormal = ab.cross_product(ac);
-        if (faceNormal.length() <= aPolicy.NORMALIZATION_THRESHOLD) return {};
-        faceNormal = faceNormal.normal();
+        const auto precise = [](const vector3_type &aPoint) {
+            return gdk::math::vector3<double>{aPoint.x, aPoint.y, aPoint.z};
+        };
+        const auto ab = precise(aTriangle.b) - precise(aTriangle.a);
+        const auto ac = precise(aTriangle.c) - precise(aTriangle.a);
+        const auto crossed = ab.cross_product(ac);
+        const auto square = crossed.length_squared();
+        if (square == 0)
+            return {};
+        const auto unit = crossed * (1 / std::sqrt(square));
+        const vector3_type faceNormal{static_cast<floating_point_type>(unit.x),
+                                      static_cast<floating_point_type>(unit.y),
+                                      static_cast<floating_point_type>(unit.z)};
 
         const auto alignment = aContactNormal.dot_product(faceNormal);
-        if (std::abs(alignment) >= 1.0f - aPolicy.FACE_CONTACT_COSINE_EPSILON) return {};
+        if (std::abs(alignment) >= 1.0f - aPolicy.FACE_CONTACT_COSINE_EPSILON)
+            return {};
 
-        const auto ap = aContactPoint - aTriangle.a;
-
-        // from Real-Time Collision Detection by Christer Ericson, published by Morgan Kaufmann Publishers, © 2005 Elsevier Inc
-        const auto d00 = ab.dot_product(ab);
-        const auto d01 = ab.dot_product(ac);
-        const auto d11 = ac.dot_product(ac);
-        const auto d20 = ap.dot_product(ab);
-        const auto d21 = ap.dot_product(ac);
-
-        const auto denominator = d00 * d11 - d01 * d01;
-        if (std::abs(denominator) <= aPolicy.NORMALIZATION_THRESHOLD) return {};
-
-        const auto v = (d11 * d20 - d01 * d21) / denominator;
-        const auto w = (d00 * d21 - d01 * d20) / denominator;
+        const auto ap = precise(aContactPoint) - precise(aTriangle.a);
+        // Cross products retain the small area lost by the Gram determinant on thin triangles.
+        const auto v = ap.cross_product(ac).dot_product(crossed) / square;
+        const auto w = ab.cross_product(ap).dot_product(crossed) / square;
         const auto u = 1.0f - v - w;
 
         const bool on[3] = {
-            w <= aPolicy.BARYCENTRIC_EDGE_EPSILON,     // edge a->b is opposite c
-            u <= aPolicy.BARYCENTRIC_EDGE_EPSILON,     // edge b->c is opposite a
-            v <= aPolicy.BARYCENTRIC_EDGE_EPSILON,     // edge c->a is opposite b
+            w <= aPolicy.BARYCENTRIC_EDGE_EPSILON, // edge a->b is opposite c
+            u <= aPolicy.BARYCENTRIC_EDGE_EPSILON, // edge b->c is opposite a
+            v <= aPolicy.BARYCENTRIC_EDGE_EPSILON, // edge c->a is opposite b
         };
 
         auto touched = false;
 
         for (int e = 0; e < 3; ++e) {
-            if (!on[e]) continue;
-            if (!(aInternalEdges & (1u << e))) return {};
+            if (!on[e])
+                continue;
+            if (!(aInternalEdges & (1u << e)))
+                return {};
             touched = true;
         }
 
-        if (!touched) return {};
+        if (!touched)
+            return {};
 
         const auto snapped = alignment >= 0 ? faceNormal : faceNormal * -1.0f;
 
@@ -233,131 +236,59 @@ namespace {
         return std::nullopt;
     }
 
-    struct contact_sample final {
-        floating_point_type gap; ///< negative when interpenetrating
-        vector3_type normal;     ///< from the other body toward the subject
-        vector3_type point;
+    struct projected_intervals final {
+        floating_point_type subjectLow, subjectHigh, otherLow, otherHigh;
     };
 
-    [[nodiscard]] contact_sample separating_axis(const box_frame &aSubject, const box_frame &aOther,
-        const impl_std_tuning &aPolicy) {
-        const auto delta = aSubject.centre - aOther.centre;
-
-        contact_sample best;
-        best.gap = -std::numeric_limits<floating_point_type>::infinity();
-        best.normal = vector3_type::zero;
-
-        const auto consider = [&](vector3_type aAxis) {
-            const auto lengthSquared = aAxis.length_squared();
-            if (lengthSquared < aPolicy.NORMALIZATION_THRESHOLD) return true;
-
-            aAxis = aAxis * (1.0f / std::sqrt(lengthSquared));
-
-            const auto centreDistance = delta.dot_product(aAxis);
-            const auto gap = std::abs(centreDistance)
-                - (projected_radius(aSubject, aAxis) + projected_radius(aOther, aAxis));
-
-            if (gap > best.gap + aPolicy.PENETRATION_DEPTH_EPSILON) {
-                best.gap = gap;
-                best.normal = centreDistance < 0.0f ? aAxis * -1.0f : aAxis;
-            }
-            return gap <= 0.0f;
-        };
-
-        for (int i = 0; i < 3; ++i) if (!consider(aSubject.axis[i])) return best;
-        for (int i = 0; i < 3; ++i) if (!consider(aOther.axis[i])) return best;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                if (!consider(aSubject.axis[i].cross_product(aOther.axis[j]))) return best;
-
-        return best;
-    }
-
-    template <typename sample_at_type>
-    [[nodiscard]] std::optional<overlap> conservative_sweep(sample_at_type aSampleAt,
-        const floating_point_type aRelativeSpeed,
+    // With fixed orientations, every projected interval moves linearly. A contact exists only
+    // where all axes' time intervals overlap; crossing one triangle's extended plane is insufficient.
+    template <typename project_type>
+    [[nodiscard]] std::optional<overlap> linear_sweep(std::span<const vector3_type> aAxes,
+        const project_type aProject, const vector3_type &aRelativeVelocity,
         const delta_time_type aDeltaTime, const impl_std_tuning &aPolicy) {
-        const auto contact_at = [&](const delta_time_type aTime, const contact_sample &aSample) {
-            overlap result;
-            result.entry_time = aTime;
-            result.exit_time = aDeltaTime;
-            result.penetration = std::max(0.0f, -aSample.gap);
-            result.contact_normal = aSample.normal;
-            result.contact_point = aSample.point;
-            return result;
-        };
+        delta_time_type entry = 0, exit = aDeltaTime;
+        auto largestGap = -std::numeric_limits<floating_point_type>::infinity();
+        auto overlapNormal = vector3_type::zero;
+        auto entryNormal = vector3_type::zero;
+        bool touching = true;
 
-        delta_time_type time = 0;
-        auto previousGap = std::numeric_limits<floating_point_type>::infinity();
+        for (auto axis : aAxes) {
+            const auto square = axis.length_squared();
+            if (square < aPolicy.NORMALIZATION_THRESHOLD) continue;
+            axis = axis * (1.0f / std::sqrt(square));
+            const auto ranges = aProject(axis);
+            const auto below = ranges.otherLow - ranges.subjectHigh;
+            const auto above = ranges.subjectLow - ranges.otherHigh;
+            const auto gap = std::max(below, above);
+            if (gap > largestGap + aPolicy.PENETRATION_DEPTH_EPSILON) {
+                largestGap = gap;
+                overlapNormal = above > below ? axis : axis * -1.0f;
+            }
+            if (gap > aPolicy.PENETRATION_DEPTH_EPSILON) touching = false;
 
-        for (unsigned short int step = 0; step <= aPolicy.CONSERVATIVE_ADVANCEMENT_MAX_STEPS; ++step) {
-            GDK_COLLISION_PROFILE_COUNT(advancement_iterations, 1);
-
-            const auto sample = aSampleAt(time);
-
-            if (sample.gap <= aPolicy.PENETRATION_DEPTH_EPSILON) return contact_at(time, sample);
-
-            if (aRelativeSpeed <= aPolicy.NORMALIZATION_THRESHOLD) return std::nullopt;
-
-            if (sample.gap >= previousGap) return std::nullopt;
-            previousGap = sample.gap;
-
-            const auto next = time + sample.gap / aRelativeSpeed;
-            if (next > aDeltaTime) return std::nullopt;
-
-            if (step == aPolicy.CONSERVATIVE_ADVANCEMENT_MAX_STEPS) return contact_at(next, aSampleAt(next));
-
-            time = next;
+            const auto speed = aRelativeVelocity.dot_product(axis);
+            if (speed == 0) {
+                if (gap > aPolicy.PENETRATION_DEPTH_EPSILON) return std::nullopt;
+                continue;
+            }
+            auto first = (below - aPolicy.PENETRATION_DEPTH_EPSILON) / speed;
+            auto last = (ranges.otherHigh - ranges.subjectLow + aPolicy.PENETRATION_DEPTH_EPSILON) / speed;
+            if (first > last) std::swap(first, last);
+            if (first > entry) {
+                if (first > entry + aPolicy.AXIS_ENTRY_EPSILON || entryNormal.is_effectively_zero())
+                    entryNormal = speed > 0 ? axis * -1.0f : axis;
+                entry = first;
+            }
+            exit = std::min(exit, last);
+            if (entry > exit) return std::nullopt;
         }
 
-        return std::nullopt;
-    }
-
-    [[nodiscard]] contact_sample separating_axis_triangle(const box_frame &aBox,
-        const triangle_points &aTriangle, const impl_std_tuning &aPolicy) {
-        contact_sample best;
-        best.gap = -std::numeric_limits<floating_point_type>::infinity();
-        best.normal = vector3_type::zero;
-
-        const auto consider = [&](vector3_type aAxis) {
-            const auto lengthSquared = aAxis.length_squared();
-            if (lengthSquared < aPolicy.NORMALIZATION_THRESHOLD) return true;
-
-            aAxis = aAxis * (1.0f / std::sqrt(lengthSquared));
-
-            const auto pa = aTriangle.a.dot_product(aAxis);
-            const auto pb = aTriangle.b.dot_product(aAxis);
-            const auto pc = aTriangle.c.dot_product(aAxis);
-            const auto triangleLow = std::min({pa, pb, pc});
-            const auto triangleHigh = std::max({pa, pb, pc});
-
-            const auto centre = aBox.centre.dot_product(aAxis);
-            const auto radius = projected_radius(aBox, aAxis);
-
-            const auto below = triangleLow - (centre + radius);
-            const auto above = (centre - radius) - triangleHigh;
-            const auto gap = std::max(below, above);
-            const auto normal = above > below ? aAxis : aAxis * -1.0f;
-
-            if (gap > best.gap + aPolicy.PENETRATION_DEPTH_EPSILON) {
-                best.gap = gap;
-                best.normal = normal;
-            }
-            return gap <= 0.0f;
-        };
-
-        const vector3_type edges[3] = {
-            aTriangle.b - aTriangle.a,
-            aTriangle.c - aTriangle.b,
-            aTriangle.a - aTriangle.c};
-
-        if (!consider(edges[0].cross_product(edges[1]))) return best;   
-        for (int i = 0; i < 3; ++i) if (!consider(aBox.axis[i])) return best;
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                if (!consider(aBox.axis[i].cross_product(edges[j]))) return best;
-
-        return best;
+        overlap result;
+        result.entry_time = touching ? 0 : entry;
+        result.exit_time = exit;
+        result.penetration = touching ? std::max(0.0f, -largestGap) : 0;
+        result.contact_normal = touching ? overlapNormal : entryNormal;
+        return result;
     }
 
     [[nodiscard]] std::optional<overlap> swept_box_triangle(
@@ -365,37 +296,54 @@ namespace {
         const shape_kinematics &aBox, const triangle_shape &aTriangleShape,
         const shape_kinematics &aTriangle, const delta_time_type aDeltaTime,
         const impl_std_tuning &aPolicy) {
-        const auto relativeSpeed = (aBox.velocity - aTriangle.velocity).length();
-
-        return conservative_sweep([&](const delta_time_type aTime) {
-            const auto box = frame_of(aBoxExtents, aBox.position + aBox.velocity * aTime, aBoxOrientation);
-            const auto triangle = world_triangle(aTriangleShape,
-                {aTriangle.position + aTriangle.velocity * aTime, aTriangle.velocity, aTriangle.orientation});
-
-            auto sample = separating_axis_triangle(box, triangle, aPolicy);
-            sample.point = closest_point_on_triangle(triangle, box.centre);
-            return sample;
-        }, relativeSpeed, aDeltaTime, aPolicy);
+        const auto box = frame_of(aBoxExtents, aBox.position, aBoxOrientation);
+        const auto triangle = world_triangle(aTriangleShape, aTriangle);
+        const std::array<vector3_type, 3> edges{
+            triangle.b - triangle.a, triangle.c - triangle.b, triangle.a - triangle.c};
+        std::array<vector3_type, 13> axes;
+        axes[0] = edges[0].cross_product(edges[1]);
+        std::size_t index = 1;
+        for (const auto axis : box.axis) axes[index++] = axis;
+        for (const auto axis : box.axis)
+            for (const auto edge : edges) axes[index++] = axis.cross_product(edge);
+        auto result = linear_sweep(axes, [&](const vector3_type &aAxis) {
+            const auto centre = box.centre.dot_product(aAxis);
+            const auto radius = projected_radius(box, aAxis);
+            const auto a = triangle.a.dot_product(aAxis), b = triangle.b.dot_product(aAxis),
+                c = triangle.c.dot_product(aAxis);
+            return projected_intervals{centre - radius, centre + radius, std::min({a, b, c}), std::max({a, b, c})};
+        }, aBox.velocity - aTriangle.velocity, aDeltaTime, aPolicy);
+        if (result) {
+            const shape_kinematics moved{aTriangle.position + aTriangle.velocity * result->entry_time,
+                aTriangle.velocity, aTriangle.orientation};
+            result->contact_point = closest_point_on_triangle(world_triangle(aTriangleShape, moved),
+                aBox.position + aBox.velocity * result->entry_time);
+        }
+        return result;
     }
 
     [[nodiscard]] std::optional<overlap> swept_box_pair(
         const vector3_type &aSubjectExtents, const quaternion_type &aSubjectOrientation,
         const shape_kinematics &aSubject,
         const vector3_type &aOtherExtents, const quaternion_type &aOtherOrientation,
-        const shape_kinematics &aOther,
-        const delta_time_type aDeltaTime, const impl_std_tuning &aPolicy) {
-        const auto relativeSpeed = (aSubject.velocity - aOther.velocity).length();
-
-        return conservative_sweep([&](const delta_time_type aTime) {
-            const auto subject = frame_of(aSubjectExtents,
-                aSubject.position + aSubject.velocity * aTime, aSubjectOrientation);
-            const auto other = frame_of(aOtherExtents,
-                aOther.position + aOther.velocity * aTime, aOtherOrientation);
-
-            auto sample = separating_axis(subject, other, aPolicy);
-            sample.point = other.centre + sample.normal * projected_radius(other, sample.normal);
-            return sample;
-        }, relativeSpeed, aDeltaTime, aPolicy);
+        const shape_kinematics &aOther, const delta_time_type aDeltaTime,
+        const impl_std_tuning &aPolicy) {
+        const auto subject = frame_of(aSubjectExtents, aSubject.position, aSubjectOrientation);
+        const auto other = frame_of(aOtherExtents, aOther.position, aOtherOrientation);
+        std::array<vector3_type, 15> axes;
+        std::size_t index = 0;
+        for (const auto axis : subject.axis) axes[index++] = axis;
+        for (const auto axis : other.axis) axes[index++] = axis;
+        for (const auto first : subject.axis)
+            for (const auto second : other.axis) axes[index++] = first.cross_product(second);
+        auto result = linear_sweep(axes, [&](const vector3_type &aAxis) {
+            const auto first = subject.centre.dot_product(aAxis), second = other.centre.dot_product(aAxis);
+            const auto firstRadius = projected_radius(subject, aAxis), secondRadius = projected_radius(other, aAxis);
+            return projected_intervals{first - firstRadius, first + firstRadius, second - secondRadius, second + secondRadius};
+        }, aSubject.velocity - aOther.velocity, aDeltaTime, aPolicy);
+        if (result) result->contact_point = other.centre + aOther.velocity * result->entry_time
+            + result->contact_normal * projected_radius(other, result->contact_normal);
+        return result;
     }
 
     [[nodiscard]] floating_point_type gap_to_plane(const shape_type &aShape,

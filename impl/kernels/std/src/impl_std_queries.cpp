@@ -190,29 +190,36 @@ namespace {
         const auto edge1 = aB - aA, edge2 = aC - aA;
 
         if (aDirection.x == 0 && aDirection.z == 0 && aDirection.y != 0) {
-            const auto area = edge1.x * edge2.z - edge1.z * edge2.x;
+            const auto precise = [](const vector3_type &aPoint) {
+                return gdk::math::vector3<double>{aPoint.x, aPoint.y, aPoint.z};
+            };
+            const auto first = precise(aB) - precise(aA), second = precise(aC) - precise(aA);
+            const auto area = first.x * second.z - first.z * second.x;
 
-            if (std::abs(area) < 1e-12f) return std::nullopt;
+            if (std::abs(area) < 1e-12) return std::nullopt;
 
-            const auto inverse = 1.0f / area;
-            const auto sx = aOrigin.x - aA.x, sz = aOrigin.z - aA.z;
-            const auto u = (sx * edge2.z - sz * edge2.x) * inverse;
+            const auto inverse = 1.0 / area;
+            const auto sx = static_cast<double>(aOrigin.x) - aA.x, sz = static_cast<double>(aOrigin.z) - aA.z;
+            const auto u = (sx * second.z - sz * second.x) * inverse;
 
-            if (u < -TRIANGLE_EDGE_SLACK || u > 1.0f + TRIANGLE_EDGE_SLACK) return std::nullopt;
+            if (u < -TRIANGLE_EDGE_SLACK || u > 1.0 + TRIANGLE_EDGE_SLACK) return std::nullopt;
 
-            const auto v = (sz * edge1.x - sx * edge1.z) * inverse;
+            const auto v = (sz * first.x - sx * first.z) * inverse;
 
-            if (v < -TRIANGLE_EDGE_SLACK || u + v > 1.0f + TRIANGLE_EDGE_SLACK) return std::nullopt;
+            if (v < -TRIANGLE_EDGE_SLACK || u + v > 1.0 + TRIANGLE_EDGE_SLACK) return std::nullopt;
 
-            const auto t = (aA.y + edge1.y * u + edge2.y * v - aOrigin.y) / aDirection.y;
+            const auto t = (aA.y + first.y * u + second.y * v - aOrigin.y) / aDirection.y;
 
             if (t < 0 || t > aMax) return std::nullopt;
 
-            auto normal = edge1.cross_product(edge2).normal();
+            const auto crossed = first.cross_product(second);
+            const auto precise_normal = crossed * (1.0 / std::sqrt(crossed.length_squared()));
+            vector3_type normal{static_cast<floating_point_type>(precise_normal.x),
+                static_cast<floating_point_type>(precise_normal.y), static_cast<floating_point_type>(precise_normal.z)};
 
             if (normal.dot_product(aDirection) > 0) normal = normal * -1.0f;
 
-            return ray_hit{t, normal};
+            return ray_hit{static_cast<floating_point_type>(t), normal};
         }
 
         const auto p = aDirection.cross_product(edge2);
